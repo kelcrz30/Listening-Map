@@ -39,6 +39,7 @@ export default function App() {
   const [targetPos, setTargetPos] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(2);
   const [isNodding, setIsNodding] = useState(false);
+  const [whisperInput, setWhisperInput] = useState("");
 
   const [visited, setVisited] = useState(() => {
     const saved = localStorage.getItem("visited_secrets");
@@ -135,11 +136,23 @@ const handlePost = async () => {
   );
 };
 
-  const handleNod = async (id, currentNods) => {
-    await supabase.from('unspoken_words')
-      .update({ nods: (currentNods || 0) + 1 })
-      .eq('id', id);
-  };
+const handleNod = async (id, currentNods) => {
+  // 1. Trigger the "Heartbeat" vibration immediately for the user
+  if (navigator.vibrate) {
+    navigator.vibrate([100, 30, 100]); 
+  }
+
+  // 2. Update the database
+  const { error } = await supabase
+    .from('unspoken_words')
+    .update({ nods: (currentNods || 0) + 1 })
+    .eq('id', id);
+
+  if (error) {
+    console.error("Nod failed:", error.message);
+    setNotification("The echo couldn't reach them...");
+  }
+};
 
   const markAsVisited = (id) => {
     if (!visited.includes(id)) {
@@ -148,7 +161,18 @@ const handlePost = async () => {
       localStorage.setItem("visited_secrets", JSON.stringify(updatedVisited));
     }
   };
+const handleAddWhisper = async (id, whisperText) => {
+  const { error } = await supabase
+    .from('unspoken_words')
+    .update({ whispers: whisperText }) // This targets your new column
+    .eq('id', id);
 
+  if (error) {
+    setNotification("The whisper was lost in the wind.");
+  } else {
+    setNotification("Whisper sent.");
+  }
+};
   return (
     <div className="h-[100dvh] w-screen relative overflow-hidden bg-[#09090b]">
       <Atmosphere isNodding={isNodding} />
@@ -249,6 +273,31 @@ const handlePost = async () => {
                 <div className="py-4 px-2 text-center text-white">
                   <span className="text-[8px] text-zinc-500 uppercase tracking-widest mb-4 block">drifted {formatRelativeTime(s.created_at)}</span>
                   <p className="text-xl font-serif italic leading-relaxed mb-8 px-4">"{s.text}"</p>
+                 {/* --- THE WHISPER SECTION --- */}
+{s.whispers ? (
+  <div className="mb-6 px-4 py-3 bg-white/5 rounded-xl border border-white/10">
+    <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">A Whisper Back</p>
+    <p className="text-sm font-light italic text-orange-200/80">"{s.whispers}"</p>
+  </div>
+) : (
+  <div className="mb-6 flex gap-2 px-2">
+    <input 
+      type="text"
+      placeholder="Whisper back..."
+      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[10px] text-white outline-none focus:border-orange-500/50"
+      onChange={(e) => setWhisperInput(e.target.value)}
+    />
+    <button 
+      onClick={() => {
+        handleAddWhisper(s.id, whisperInput);
+        setWhisperInput(""); // Clear after sending
+      }}
+      className="text-[8px] uppercase tracking-widest text-zinc-400 hover:text-white"
+    >
+      Send
+    </button>
+  </div>
+)}
                   <div className="flex flex-col gap-4 items-center border-t border-white/5 pt-4">
                     <button onClick={() => {
                         const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
