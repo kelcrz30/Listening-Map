@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(3); opacity: 0; }
+}
+
+.listening-pulse::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background: #f59e0b;
+  border-radius: 50%;
+  animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+}
+@keyframes heartBeat {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* This targets the dots that are being 'listened' to */
+.listening-pulse div {
+  animation: heartBeat 2s ease-in-out infinite;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.8) !important;
+}
+/* Removes the faint grid lines on dark tiles */
+.leaflet-tile {
+  outline: 1px solid transparent;
+}
+
+.leaflet-container {
+  background: #09090b !important; /* Matches the darkest part of the map */
+}
+
+/* Optional: Adds a subtle vignette so the edges of the screen are darker */
+.leaflet-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-shadow: inset 0 0 150px black;
+  pointer-events: none;
+  z-index: 400;
+}
+.leaflet-control-attribution {
+  display: none !important;
+}
+.font-serif {
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+}
+
+/* Make the orange count pop more */
+.text-orange-500 {
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+/* 1. Perfect Black Background */
+.leaflet-container {
+  background: #09090b !important;
+}
+
+/* 2. Sync Pulse Animation */
+@keyframes syncPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 15px rgba(245, 158, 11, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+.listening-pulse div {
+  animation: syncPulse 3s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  background-color: #f59e0b !important;
+}
+
+/* 3. Dark Popup Styling */
+.leaflet-popup-content-wrapper {
+  background: rgba(15, 15, 18, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(15, 15, 18, 0.85) !important;
+}
+
+/* Hide Branding */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 1px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(10, 10, 12, 0.8) !important;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(10, 10, 12, 0.8) !important;
+}
+.map-dawn .leaflet-tile-container { filter: sepia(0.3) hue-rotate(-30deg) brightness(0.8); }
+.map-dusk .leaflet-tile-container { filter: sepia(0.5) hue-rotate(240deg) brightness(0.6) saturate(1.4); }
+.map-night .leaflet-tile-container { filter: brightness(0.4) contrast(1.2) saturate(0.5); }
+.map-day .leaflet-tile-container { filter: contrast(1.1) brightness(0.9); }
