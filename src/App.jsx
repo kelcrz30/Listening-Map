@@ -97,27 +97,30 @@ export default function App() {
     setTimeout(() => setIsNodding(false), 800);
   };
 
-  const handlePost = async () => {
-    if (!inputText.trim()) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const { data } = await supabase
-        .from('unspoken_words')
-        .insert([{
-          text: inputText,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          is_listening: false,
-          nods: 0
-        }])
-        .select();
+const handlePost = async () => {
+  if (!inputText.trim()) return;
 
-      if (data) {
-        const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-        localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, data[0].id]));
-        setInputText("");
-      }
-    });
-  };
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { data, error } = await supabase
+      .from('unspoken_words')
+      .insert([{
+        text: inputText,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        is_listening: false,
+        // REMOVE 'nods: 0' if it is not in your table editor
+      }])
+      .select();
+
+    if (error) {
+      console.error("Error posting:", error.message);
+      alert(error.message); // This will tell you exactly which column is missing
+    } else {
+      setInputText("");
+      // Refresh your local secrets list here if needed
+    }
+  });
+};
 
   const handleNod = async (id, currentNods) => {
     await supabase.from('unspoken_words')
