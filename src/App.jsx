@@ -101,13 +101,12 @@ export default function App() {
 const handlePost = async () => {
   if (!inputText.trim()) return;
 
-  // Let the user know the app is working
-  setNotification("Accessing GPS..."); 
+  setNotification("Accessing GPS...");
 
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
       setNotification("Sharing to the map...");
-      
+
       const { data, error } = await supabase
         .from('unspoken_words')
         .insert([{
@@ -115,43 +114,56 @@ const handlePost = async () => {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           is_listening: false
-          // Ensure 'nods' is NOT here unless you added the column!
-        }]);
+        }])
+        .select(); // Retrieve the new record
 
       if (error) {
-        // This alerts them if it's a 400 Bad Request error
-        alert("Database Error: " + error.message); 
+        alert("Database Error: " + error.message);
         setNotification("Post failed.");
-      } else {
+        return;
+      }
+
+      // Handle successful post
+      if (data && data.length > 0) {
+        const newId = data[0].id;
+        const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+        localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newId]));
+        
         setInputText("");
         setNotification("Message sent.");
       }
     },
     (geoError) => {
-      // This solves the "Why can't I post?" mystery for users
-      alert("Location Error: Please 'Allow' location access in your browser settings to post.");
+      alert("Location Error: Please allow location access to post.");
       setNotification("Location denied.");
     },
-    { timeout: 10000 } // Give up after 10 seconds of trying to find them
+    { timeout: 10000, enableHighAccuracy: true }
   );
 };
 
 const handleNod = async (id, currentNods) => {
-  // 1. Trigger the "Heartbeat" vibration immediately for the user
-  if (navigator.vibrate) {
-    navigator.vibrate([100, 30, 100]); 
-  }
+    // Prevent UI lag
+    if (navigator.vibrate) navigator.vibrate([50]);
 
-  // 2. Update the database
-  const { error } = await supabase
-    .from('unspoken_words')
-    .update({ nods: (currentNods || 0) + 1 })
-    .eq('id', id);
+    const newNodCount = (currentNods || 0) + 1;
 
-  if (error) {
-    console.error("Nod failed:", error.message);
-    setNotification("The echo couldn't reach them...");
-  }
+    // 1. Update local state immediately (Optimistic)
+    setSecrets(prev => prev.map(s => 
+      s.id === id ? { ...s, nods: newNodCount } : s
+    ));
+
+    // 2. Database call
+    const { error } = await supabase
+      .from('unspoken_words')
+      .update({ nods: newNodCount })
+      .eq('id', id);
+
+    if (error) {
+      // Revert if DB fails
+      setSecrets(prev => prev.map(s => 
+        s.id === id ? { ...s, nods: currentNods } : s
+      ));
+    }
 };
 
   const markAsVisited = (id) => {
