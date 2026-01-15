@@ -134,7 +134,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden bg-[#09090b]">
+    <div className="h-[100dvh] w-screen relative overflow-hidden bg-[#09090b]">
       <Atmosphere isNodding={isNodding} />
 
       {/* --- OVERLAYS --- */}
