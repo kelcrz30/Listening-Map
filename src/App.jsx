@@ -100,26 +100,39 @@ export default function App() {
 const handlePost = async () => {
   if (!inputText.trim()) return;
 
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const { data, error } = await supabase
-      .from('unspoken_words')
-      .insert([{
-        text: inputText,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        is_listening: false,
-        // REMOVE 'nods: 0' if it is not in your table editor
-      }])
-      .select();
+  // Let the user know the app is working
+  setNotification("Accessing GPS..."); 
 
-    if (error) {
-      console.error("Error posting:", error.message);
-      alert(error.message); // This will tell you exactly which column is missing
-    } else {
-      setInputText("");
-      // Refresh your local secrets list here if needed
-    }
-  });
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      setNotification("Sharing to the map...");
+      
+      const { data, error } = await supabase
+        .from('unspoken_words')
+        .insert([{
+          text: inputText,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          is_listening: false
+          // Ensure 'nods' is NOT here unless you added the column!
+        }]);
+
+      if (error) {
+        // This alerts them if it's a 400 Bad Request error
+        alert("Database Error: " + error.message); 
+        setNotification("Post failed.");
+      } else {
+        setInputText("");
+        setNotification("Message sent.");
+      }
+    },
+    (geoError) => {
+      // This solves the "Why can't I post?" mystery for users
+      alert("Location Error: Please 'Allow' location access in your browser settings to post.");
+      setNotification("Location denied.");
+    },
+    { timeout: 10000 } // Give up after 10 seconds of trying to find them
+  );
 };
 
   const handleNod = async (id, currentNods) => {

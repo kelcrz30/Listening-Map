@@ -125,3 +125,15 @@
 .map-dusk .leaflet-tile-container { filter: sepia(0.5) hue-rotate(240deg) brightness(0.6) saturate(1.4); }
 .map-night .leaflet-tile-container { filter: brightness(0.4) contrast(1.2) saturate(0.5); }
 .map-day .leaflet-tile-container { filter: contrast(1.1) brightness(0.9); }
+
+/* Force Leaflet to occupy the full dynamic viewport */
+.leaflet-container {
+  height: 100dvh !important;
+  width: 100vw !important;
+  background: #09090b !important;
+}
+
+/* Ensure the tiles cover the whole area */
+.leaflet-tile-container {
+  background: #09090b;
+}
