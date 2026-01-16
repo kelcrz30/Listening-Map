@@ -36,7 +36,7 @@ export default function ManifestoOverlay({ onClose }) {
       <div className="flex gap-12 text-[9px] tracking-[0.3em] text-zinc-700 uppercase">
         <span>Global Presence</span>
         <span>—</span>
-        <span>Anonymous</span>
+        <span>Kel</span>
       </div>
 
       {/* Optional: Subtle Grain Overlay via CSS */}
