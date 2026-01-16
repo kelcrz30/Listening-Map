@@ -51,7 +51,7 @@ function AppContent() {
   // NEW: State for real-time presence
   const [onlineCount, setOnlineCount] = useState(1);
 
-  useEffect(() => {
+ useEffect(() => {
     const fetchSecrets = async () => {
       const { data } = await supabase
         .from('unspoken_words')
@@ -62,19 +62,24 @@ function AppContent() {
     
     fetchSecrets();
 
-    // Setup Channel with Presence logic
+    // GENERATE A UNIQUE ID FOR THIS SESSION
+    const sessionUserId = `user-${Math.random().toString(36).substr(2, 9)}`;
+
     const channel = supabase.channel('global_presence', {
-      config: { presence: { key: 'user' } }
+      config: { 
+        presence: { 
+          key: sessionUserId  // <--- This ensures every visitor is unique
+        } 
+      }
     });
 
     channel
-      // Tracks real-time "Hearts Listening"
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
+        // We count the total number of unique keys present
         const count = Object.keys(newState).length;
         setOnlineCount(count); 
       })
-      // Existing Database Listeners
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -90,13 +95,6 @@ function AppContent() {
           setSecrets((prev) => prev.map(s => {
             if (s.id === payload.new.id) {
               if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
-              
-              const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-              if (mySecrets.includes(s.id) && (s.nods === 0 || !s.nods) && payload.new.nods === 1) {
-                setNotification("Someone out there felt your words...");
-                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                setTimeout(() => setNotification(null), 6000);
-              }
               return payload.new;
             }
             return s;
@@ -105,7 +103,7 @@ function AppContent() {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Join the presence room
+          // Track the unique session
           await channel.track({ online_at: new Date().toISOString() });
         }
       });
