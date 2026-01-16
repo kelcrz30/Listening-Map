@@ -240,17 +240,7 @@ const handleNod = async (id, currentNods) => {
       <Atmosphere isNodding={isNodding} isDark={isDark} />
 
       {/* Placement Mode Overlay */}
-      {isPlacementMode && (
-        <div className={`fixed inset-0 z-[999] pointer-events-none flex items-center justify-center`}>
-          <div className={`px-6 py-3 rounded-full backdrop-blur-md border animate-pulse ${
-            isDark 
-              ? 'bg-orange-500/90 border-orange-400 text-white' 
-              : 'bg-orange-500 border-orange-600 text-white'
-          }`}>
-            <p className="text-sm font-medium tracking-wide">📍 Click on map or search for a place</p>
-          </div>
-        </div>
-      )}
+
 
       {/* Map Search */}
       <MapSearch 

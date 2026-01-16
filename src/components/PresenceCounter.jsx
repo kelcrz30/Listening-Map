@@ -9,13 +9,15 @@ const PresenceCounter = ({ count, isDark }) => {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
           </div>
-          <span className={`text-[8px] sm:text-[9px] tracking-[0.4em] sm:tracking-[0.6em] uppercase ${isDark ? 'text-white/30' : 'text-gray-500'}`}>
-            Presence
+          {/* Increased opacity for Sulyap in dark mode for better visibility */}
+          <span className={`text-[20px] sm:text-[20px] tracking-[0.4em] sm:tracking-[0.6em] uppercase ${isDark ? 'text-white/50' : 'text-black'}`}>
+            Sulyap
           </span>
         </div>
         <div className={`mt-2 flex items-baseline gap-2 sm:gap-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           <span className="text-2xl sm:text-4xl font-serif italic">{count}</span>
-          <span className={`text-[8px] sm:text-[9px] tracking-[0.2em] sm:tracking-[0.3em] uppercase ${isDark ? 'text-zinc-600' : 'text-gray-500'}`}>
+          {/* Changed text-zinc-600 to text-zinc-500 for better contrast on black */}
+          <span className={`text-[8px] sm:text-[9px] tracking-[0.2em] sm:tracking-[0.3em] uppercase ${isDark ? 'text-zinc-500' : 'text-black'}`}>
             Hearts Listening
           </span>
         </div>
