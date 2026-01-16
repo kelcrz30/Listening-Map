@@ -23,6 +23,7 @@ import BottomDock from "./components/BottomDock";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import "leaflet/dist/leaflet.css";
+import MapLegend from "./components/MapLegend";
 
 export default function App() {
   return (
@@ -324,7 +325,7 @@ function AppContent() {
           setNotification={setNotification}
         />
       </MapContainer>
-
+     <MapLegend/>
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}
