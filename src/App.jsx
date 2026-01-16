@@ -18,7 +18,7 @@ import PresenceCounter from "./components/PresenceCounter";
 import MenuButton from "./components/MenuButton";
 import ThemeToggle from "./components/ThemeToggle";
 import Sidebar from "./components/Sidebar";
-import MapMarkers from "./components/MapMarkers.JSX";
+import MapMarkers from "./components/MapMarkers";
 import BottomDock from "./components/BottomDock";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";

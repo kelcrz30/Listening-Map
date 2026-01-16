@@ -5,7 +5,7 @@ export default function ManifestoOverlay({ onClose }) {
     <div className="fixed inset-0 z-[2001] flex items-center justify-center bg-black/95 backdrop-blur-2xl">
       <div className="text-center px-6 max-w-2xl">
         <h1 className="text-6xl sm:text-8xl font-serif italic text-white/90 mb-10 tracking-tight">
-          A Map of Us
+          Sulyap
         </h1>
         <p className="text-zinc-500 text-sm sm:text-base leading-relaxed mb-16 font-light">
           "This is a map of things we carry but never say."
