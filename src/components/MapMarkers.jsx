@@ -10,10 +10,8 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
   return (
     <>
       {secrets.map((s) => {
-        // Calculate the visual size of the marker based on length and popularity
         const weight = Math.min((s.text?.length || 0) / 4 + (s.nods || 0) * 3, 40);
         
-        // Track if the current local user has already nodded this secret
         const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
         const hasNodded = noddedSecrets.includes(s.id);
 
@@ -35,7 +33,6 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                    "{s.text}"
                  </p>
 
-                {/* Whisper Section */}
                 {s.whispers ? (
                   <div className={`mb-6 px-4 py-3 rounded-xl border ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
                     <p className={`text-[10px] uppercase tracking-widest mb-1 ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
@@ -73,7 +70,7 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                   </div>
                 )}
 
-                {/* Actions Section */}
+                {/* Actions  */}
                 <div className={`flex flex-col gap-4 items-center border-t pt-4 ${isDark ? 'border-white/5' : 'border-gray-200'}`}>
                   <button
                     onClick={() => onNod(s.id, s.nods)}

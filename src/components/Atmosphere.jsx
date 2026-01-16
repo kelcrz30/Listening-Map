@@ -7,10 +7,7 @@ export default function Atmosphere({ isNodding }) {
   return (
     <>
       {/* Dynamic Night Overlay */}
-      <div 
-        className={`fixed inset-0 pointer-events-none z-[400] transition-opacity duration-[3000ms] 
-        ${isNight ? 'bg-black/40' : 'bg-transparent'}`} 
-      />
+
 
       {/* Heartbeat Pulse (Nod Feedback) */}
 <div className={`fixed inset-0 pointer-events-none z-[5000] transition-opacity duration-1000 
