@@ -10,16 +10,19 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
   return (
     <>
       {secrets.map((s) => {
-        const weight = Math.min((s.text?.length || 0) / 4 + (s.nods || 0) * 3, 40);
+        // Echoes (nods) increase the size of the pin
+        const weight = Math.min((s.text?.length || 0) / 4 + (s.nods || 0) * 3, 40); 
         
-        const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
-        const hasNodded = noddedSecrets.includes(s.id);
+        // We use 'nodded_secrets' in localStorage but display it as 'Echoes' to the user
+        const echoedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
+        const hasEchoed = echoedSecrets.includes(s.id); 
+        const isVisited = visited.includes(s.id); 
 
         return (
           <Marker
             key={s.id}
             position={[s.lat, s.lng]}
-            icon={getMemoryIcon(s.is_listening, visited.includes(s.id), weight, isDark)}
+            icon={getMemoryIcon(s.is_listening, isVisited, weight, isDark)}
             eventHandlers={{ click: () => onMarkAsVisited(s.id) }}>
             
             <Popup minWidth={280}>
@@ -30,9 +33,10 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                 </span>
                 
                  <p className={`popup-text text-xl font-serif italic leading-relaxed mb-8 px-4 ${isDark ? 'text-white' : 'text-black'}`}>
-                   "{s.text}"
+                    "{s.text}"
                  </p>
 
+                {/* Whisper Logic */}
                 {s.whispers ? (
                   <div className={`mb-6 px-4 py-3 rounded-xl border ${isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
                     <p className={`text-[10px] uppercase tracking-widest mb-1 ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
@@ -70,29 +74,36 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                   </div>
                 )}
 
-                {/* Actions  */}
+                {/* --- UPDATED ACTIONS SECTION --- */}
                 <div className={`flex flex-col gap-4 items-center border-t pt-4 ${isDark ? 'border-white/5' : 'border-gray-200'}`}>
-                  <button
-                    onClick={() => onNod(s.id, s.nods)}
-                    className="group flex flex-col items-center gap-1 transition-transform active:scale-95"
-                  >
-                    <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
-                      hasNodded 
-                        ? 'bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]' 
-                        : (s.nods > 0 ? 'bg-orange-500/40 animate-pulse' : (isDark ? 'bg-zinc-600' : 'bg-gray-400'))
-                    }`} />
-                    <span className={`text-[9px] tracking-widest uppercase transition-colors ${
-                      hasNodded ? 'text-orange-400' : (isDark ? 'text-zinc-500 group-hover:text-zinc-300' : 'text-gray-400')
-                    }`}>
-                      {s.nods || 0} {s.nods === 1 ? 'Nod' : 'Nods'}
+                  
+                  <div className="flex justify-between items-center w-full px-4">
+                    {/* The Echo Button (Formerly Nod) */}
+                    <button
+                      onClick={() => onNod(s.id, s.nods)}
+                      className="group flex items-center gap-2 transition-transform active:scale-95"
+                    >
+                      <div className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                        hasEchoed 
+                          ? 'bg-purple-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]' 
+                          : (isDark ? 'bg-zinc-600' : 'bg-gray-400')
+                      }`} />
+                      <span className={`text-[10px] tracking-widest uppercase ${
+                        hasEchoed ? 'text-purple-400 font-bold' : (isDark ? 'text-zinc-500' : 'text-gray-400')
+                      }`}>
+                        {s.nods || 0} {s.nods === 1 ? 'Echo' : 'Echoes'}
+                      </span>
+                    </button>
+                    
+                    <span className={`text-[8px] uppercase tracking-widest ${isDark ? 'text-zinc-600' : 'text-gray-400'}`}>
+                      {isVisited ? "Heard" : "Unheard"}
                     </span>
-                  </button>
+                  </div>
 
+                  {/* The Live Pulse Button */}
                   <ListeningButton 
                     id={s.id} 
                     isListening={s.is_listening} 
-                    onNod={onNod} 
-                    nods={s.nods} 
                   />
                 </div>
               </div>
