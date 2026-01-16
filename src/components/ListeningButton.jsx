@@ -1,8 +1,14 @@
-import { supabase } from "../supabaseClient";
-
-export default function ListeningButton({ id, isListening }) {
+// Add 'onNod' and 'nods' to your props
+export default function ListeningButton({ id, isListening, nods, onNod }) {
+  
   const toggleListen = async () => {
-    // This updates the database instantly
+    // 1. Trigger the Nod (the +1 count)
+    // We only nod if they aren't already listening (optional logic)
+    if (!isListening) {
+      onNod(id, nods);
+    }
+
+    // 2. Keep your existing "is_listening" toggle logic
     const { error } = await supabase
       .from('unspoken_words')
       .update({ is_listening: !isListening })

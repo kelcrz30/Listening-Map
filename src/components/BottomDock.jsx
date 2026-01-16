@@ -1,0 +1,95 @@
+import React, { useState } from 'react';
+import LocationModeToggle from './LocationModeToggle';
+
+export default function BottomDock({ 
+  onAboutClick, 
+  onContactClick, 
+  onPost, 
+  isDark, 
+  useCurrentLocation, 
+  onLocationModeToggle,
+  selectedLocation 
+}) {
+  const [inputText, setInputText] = useState("");
+
+  const handlePost = () => {
+    onPost(inputText);
+    setInputText("");
+  };
+
+  const getPlaceholder = () => {
+    if (useCurrentLocation) {
+      return "Share something unspoken...";
+    }
+    if (selectedLocation) {
+      return "📍 Location set! Write your message...";
+    }
+    return "First, click on the map to choose location...";
+  };
+
+  return (
+    <div className="fixed bottom-4 sm:bottom-12 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-5xl px-3 sm:px-6 flex flex-col items-center justify-center gap-3">
+      
+      {/* Location Mode Selector - Only show when input has text */}
+      {inputText.trim() && (
+        <div className="w-full sm:w-auto flex justify-center animate-fade-in-up">
+          <LocationModeToggle 
+            useCurrentLocation={useCurrentLocation}
+            onToggle={onLocationModeToggle}
+            isDark={isDark}
+          />
+        </div>
+      )}
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 w-full">
+      <div className="flex gap-2 sm:gap-3 w-full sm:w-auto justify-center">
+        <button
+          onClick={onAboutClick}
+          className={`backdrop-blur-md border text-[8px] sm:text-[9px] tracking-[0.3em] uppercase px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all ${
+            isDark 
+              ? 'bg-zinc-900/60 hover:bg-zinc-800/80 border-white/5 text-zinc-500 hover:text-white' 
+              : 'bg-white/80 hover:bg-white border-gray-200 text-gray-600 hover:text-gray-900 shadow-lg'
+          }`}>
+          About
+        </button>
+        <button
+          onClick={onContactClick}
+          className={`backdrop-blur-md border text-[8px] sm:text-[9px] tracking-[0.3em] uppercase px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all ${
+            isDark 
+              ? 'bg-zinc-900/60 hover:bg-zinc-800/80 border-white/5 text-zinc-500 hover:text-white' 
+              : 'bg-white/80 hover:bg-white border-gray-200 text-gray-600 hover:text-gray-900 shadow-lg'
+          }`}>
+          Suggestions
+        </button>
+      </div>
+
+      <div className={`border p-1.5 sm:p-2 rounded-xl sm:rounded-2xl flex items-center backdrop-blur-3xl w-full sm:min-w-[450px] ${
+        isDark 
+          ? 'bg-zinc-900/40 border-white/5' 
+          : 'bg-white/80 border-gray-200 shadow-2xl'
+      }`}>
+        <input
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder={getPlaceholder()}
+          className={`flex-1 px-3 sm:px-5 py-2.5 sm:py-3 outline-none text-xs sm:text-sm bg-transparent font-light ${
+            isDark 
+              ? 'text-white placeholder:text-zinc-700' 
+              : 'text-gray-900 placeholder:text-gray-400'
+          }`}
+        />
+        <button
+          onClick={handlePost}
+          disabled={!inputText.trim() || (!useCurrentLocation && !selectedLocation)}
+          className={`text-[8px] sm:text-[9px] font-bold px-4 sm:px-8 py-3 sm:py-4 rounded-lg sm:rounded-xl uppercase tracking-[0.3em] sm:tracking-[0.4em] border transition-all ${
+            isDark 
+              ? 'bg-white/5 hover:bg-white/10 text-white border-white/10 disabled:opacity-30 disabled:cursor-not-allowed' 
+              : 'bg-gray-900 hover:bg-gray-800 text-white border-gray-900 disabled:opacity-30 disabled:cursor-not-allowed'
+          }`}>
+          Post
+        </button>
+      </div>
+      </div>
+    </div>
+  );
+}

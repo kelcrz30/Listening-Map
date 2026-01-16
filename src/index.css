@@ -1,43 +1,18 @@
 @import "tailwindcss";
 
-@keyframes pulse-ring {
-  0% { transform: scale(1); opacity: 0.7; }
-  100% { transform: scale(3); opacity: 0; }
-}
+/* ============================================
+   LEAFLET MAP - DARK MODE
+============================================ */
 
-.listening-pulse::after {
-  content: '';
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  top: 0;
-  left: 0;
-  background: #f59e0b;
-  border-radius: 50%;
-  animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
-}
-@keyframes heartBeat {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.5); opacity: 0.4; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-/* This targets the dots that are being 'listened' to */
-.listening-pulse div {
-  animation: heartBeat 2s ease-in-out infinite;
-  box-shadow: 0 0 15px rgba(245, 158, 11, 0.8) !important;
-}
-/* Removes the faint grid lines on dark tiles */
-.leaflet-tile {
+body:has(.bg-black) .leaflet-tile {
   outline: 1px solid transparent;
 }
 
-.leaflet-container {
-  background: #09090b !important; /* Matches the darkest part of the map */
+body:has(.bg-black) .leaflet-container {
+  background: #09090b !important;
 }
 
-/* Optional: Adds a subtle vignette so the edges of the screen are darker */
-.leaflet-container::after {
+body:has(.bg-black) .leaflet-container::after {
   content: '';
   position: absolute;
   top: 0;
@@ -48,92 +23,105 @@
   pointer-events: none;
   z-index: 400;
 }
-.leaflet-control-attribution {
-  display: none !important;
-}
-.font-serif {
-  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+
+/* ============================================
+   LEAFLET MAP - LIGHT MODE
+============================================ */
+
+body:has(.bg-gray-50) .leaflet-tile {
+  outline: 1px solid transparent;
 }
 
-/* Make the orange count pop more */
-.text-orange-500 {
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
-}
-/* 1. Perfect Black Background */
-.leaflet-container {
-  background: #09090b !important;
+body:has(.bg-gray-50) .leaflet-container {
+  background: #f9fafb !important;
 }
 
-/* 2. Sync Pulse Animation */
-@keyframes syncPulse {
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
-  70% { transform: scale(1.1); box-shadow: 0 0 0 15px rgba(245, 158, 11, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+body:has(.bg-gray-50) .leaflet-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.05);
+  pointer-events: none;
+  z-index: 400;
 }
 
-.listening-pulse div {
-  animation: syncPulse 3s infinite cubic-bezier(0.4, 0, 0.6, 1);
-  background-color: #f59e0b !important;
-}
+/* ============================================
+   LEAFLET POPUP - DARK MODE (FORCE WHITE TEXT)
+============================================ */
 
-/* 3. Dark Popup Styling */
-.leaflet-popup-content-wrapper {
-  background: rgba(15, 15, 18, 0.85) !important;
-  backdrop-filter: blur(12px);
+body:has(.bg-black) .leaflet-popup-content-wrapper,
+body:has(.bg-black) .leaflet-popup-tip {
+  background: rgba(15, 15, 18, 0.95) !important;
+  backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px !important;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
 }
 
-.leaflet-popup-tip {
-  background: rgba(15, 15, 18, 0.85) !important;
+body:has(.bg-black) .popup-text {
+  color: #ffffff !important;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2) !important;
+}
+.leaflet-popup-content-wrapper {
+  padding: 0 !important; /* Removes default leaflet padding */
+  border-radius: 28px !important; /* Extra rounded corners */
+  overflow: hidden;
+  min-width: 320px !important; /* This stops it from being "thin" */
+  max-width: 320px !important;
 }
 
-/* Hide Branding */
+/* Ensure the content inside fills that width */
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: 100% !important;
+}
+.leaflet-popup-close-button {
+  top: 15px !important;    /* Distance from top */
+  right: 15px !important;  /* Distance from right */
+  padding: 8px !important;
+
+}
+
+/* Ensure the X button doesn't have a background/border */
+.leaflet-popup-close-button:hover {
+
+
+}
+/* ============================================
+   LEAFLET POPUP - LIGHT MODE (FORCE BLACK TEXT)
+============================================ */
+
+body:has(.bg-gray-50) .leaflet-popup-content-wrapper,
+body:has(.bg-gray-50) .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 24px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2) !important;
+}
+
+body:has(.bg-gray-50) .popup-text {
+  color: #000000 !important;
+  text-shadow: none !important; /* Removes the white glow that made it invisible */
+}
+
+/* ============================================
+   UTILITY & CLEANUP
+============================================ */
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+}
+
 .leaflet-control-attribution {
   display: none !important;
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(15px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 1px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.leaflet-popup-content-wrapper {
-  background: rgba(10, 10, 12, 0.8) !important;
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 24px !important;
-}
-
-.leaflet-popup-tip {
-  background: rgba(10, 10, 12, 0.8) !important;
-}
-.map-dawn .leaflet-tile-container { filter: sepia(0.3) hue-rotate(-30deg) brightness(0.8); }
-.map-dusk .leaflet-tile-container { filter: sepia(0.5) hue-rotate(240deg) brightness(0.6) saturate(1.4); }
-.map-night .leaflet-tile-container { filter: brightness(0.4) contrast(1.2) saturate(0.5); }
-.map-day .leaflet-tile-container { filter: contrast(1.1) brightness(0.9); }
-
-/* Force Leaflet to occupy the full dynamic viewport */
 .leaflet-container {
   height: 100dvh !important;
   width: 100vw !important;
-  background: #09090b !important;
-}
-
-/* Ensure the tiles cover the whole area */
-.leaflet-tile-container {
-  background: #09090b;
 }
