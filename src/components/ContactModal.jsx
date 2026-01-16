@@ -90,9 +90,9 @@ export default function ContactModal({ onClose, setNotification }) {
           </button>
 
           <div className="flex gap-6 items-center">
-            <a href="https://facebook.com/yourlink" target="_blank" rel="noreferrer" className="text-zinc-700 hover:text-white text-[9px] tracking-[0.3em] uppercase transition-colors">Facebook</a>
+            <a href="https://www.facebook.com/kelllllll/" target="_blank" rel="noreferrer" className="text-zinc-700 hover:text-white text-[9px] tracking-[0.3em] uppercase transition-colors">Facebook</a>
             <span className="text-zinc-900">/</span>
-            <a href="https://tiktok.com/@yourlink" target="_blank" rel="noreferrer" className="text-zinc-700 hover:text-white text-[9px] tracking-[0.3em] uppercase transition-colors">TikTok</a>
+            <a href="https://www.tiktok.com/@nykelcrz" target="_blank" rel="noreferrer" className="text-zinc-700 hover:text-white text-[9px] tracking-[0.3em] uppercase transition-colors">TikTok</a>
           </div>
         </div>
       </div>
