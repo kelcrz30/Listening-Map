@@ -264,10 +264,12 @@ const handleNod = async (id, currentNods) => {
 
 <MapContainer 
   center={[13, 122]} 
-  zoom={3} 
-  minZoom={2.5}
-  worldCopyJump={true} // Allows the map to loop infinitely
-  noWrap={false}       // Removes the "walls" at the edges
+  zoom={4}              
+  /* --- THE NO-EDGE FIX --- */
+  minZoom={3}           // 1. Prevents zooming out to see the top/bottom edges
+  worldCopyJump={true}  // 2. Markers stay in the right place during infinite scrolling
+  noWrap={false}        // 3. Allows horizontal scrolling without a "wall"
+  /* ----------------------- */
   zoomControl={false} 
   className="h-full w-full z-0"
 >
