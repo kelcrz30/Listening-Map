@@ -48,7 +48,6 @@ function AppContent() {
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [useCurrentLocation, setUseCurrentLocation] = useState(true);
 
-  // Fetch secrets and setup real-time subscription
   useEffect(() => {
     const fetchSecrets = async () => {
       const { data } = await supabase
@@ -107,7 +106,7 @@ function AppContent() {
     if (!inputText.trim()) return;
     
     if (useCurrentLocation) {
-      // Original GPS-based posting
+
       setNotification("Accessing GPS...");
       
       navigator.geolocation.getCurrentPosition(
@@ -121,7 +120,7 @@ function AppContent() {
         { timeout: 10000, enableHighAccuracy: true }
       );
     } else {
-      // Map-click based posting
+
       if (!selectedLocation) {
         setNotification("Please click on the map to choose a location.");
         setIsPlacementMode(true);
@@ -179,12 +178,10 @@ function AppContent() {
   const handleLocationModeToggle = (useCurrent) => {
     setUseCurrentLocation(useCurrent);
     if (!useCurrent) {
-      // Switching to "Pick on Map" mode
       setIsPlacementMode(true);
       setNotification("Click anywhere on the map to choose your location, or search for a place.");
       setTimeout(() => setNotification(null), 5000);
     } else {
-      // Switching back to "My Location"
       setSelectedLocation(null);
       setIsPlacementMode(false);
     }
@@ -192,7 +189,7 @@ function AppContent() {
 
   const handleSearchLocationFound = (lat, lng, displayName) => {
     setSelectedLocation({ lat, lng });
-    setTargetPos([lat, lng]); // Also fly to the location
+    setTargetPos([lat, lng]); 
     setIsPlacementMode(false);
     setNotification(`📍 ${displayName.split(',')[0]} selected!`);
     setTimeout(() => setNotification(null), 4000);
@@ -238,29 +235,21 @@ const handleNod = async (id, currentNods) => {
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
       <Atmosphere isNodding={isNodding} isDark={isDark} />
-
-      {/* Placement Mode Overlay */}
-
-
-      {/* Map Search */}
       <MapSearch 
         isDark={isDark}
         isVisible={!useCurrentLocation}
         onLocationFound={handleSearchLocationFound}
       />
 
-      {/* Overlays */}
       {showManifesto && <ManifestoOverlay onClose={() => setShowManifesto(false)} />}
       {showAboutModal && <AboutModal onClose={() => setShowAboutModal(false)} />}
       {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} setNotification={setNotification} />}
 
-      {/* UI Elements */}
       <Notification message={notification} isDark={isDark} />
       <PresenceCounter count={secrets.filter(s => s.is_listening).length} isDark={isDark} />
       <ThemeToggle />
       <MenuButton isOpen={showSidebar} onClick={() => setShowSidebar(!showSidebar)} isDark={isDark} />
 
-      {/* Sidebar */}
       <Sidebar
         isOpen={showSidebar}
         secrets={secrets}
@@ -273,8 +262,15 @@ const handleNod = async (id, currentNods) => {
         }}
       />
 
-      {/* Map */}
-      <MapContainer center={[0, 0]} zoom={2} zoomControl={false} className="h-full w-full z-0">
+<MapContainer 
+  center={[13, 122]} 
+  zoom={3} 
+  minZoom={2.5}
+  worldCopyJump={true} // Allows the map to loop infinitely
+  noWrap={false}       // Removes the "walls" at the edges
+  zoomControl={false} 
+  className="h-full w-full z-0"
+>
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
         <MapController secrets={secrets} targetPos={targetPos} setZoomLevel={setZoomLevel} />
         <MapClickHandler 
@@ -283,7 +279,6 @@ const handleNod = async (id, currentNods) => {
         />
         <Constellations secrets={secrets} zoomLevel={zoomLevel} />
         
-        {/* Show preview marker when location is selected */}
         {selectedLocation && (
           <Marker
             position={[selectedLocation.lat, selectedLocation.lng]}
@@ -314,7 +309,6 @@ const handleNod = async (id, currentNods) => {
   secrets={secrets}
   visited={visited}
   isDark={true} 
-  // Make sure 'markAsVisited' (the function) is passed to 'onMarkAsVisited' (the prop)
   onMarkAsVisited={markAsVisited} 
   onNod={handleNod}
   onWhisper={handleAddWhisper}
