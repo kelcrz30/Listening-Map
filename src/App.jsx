@@ -47,6 +47,9 @@ function AppContent() {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [useCurrentLocation, setUseCurrentLocation] = useState(true);
+  
+  // NEW: State for real-time presence
+  const [onlineCount, setOnlineCount] = useState(1);
 
   useEffect(() => {
     const fetchSecrets = async () => {
@@ -59,8 +62,19 @@ function AppContent() {
     
     fetchSecrets();
 
-    const channel = supabase
-      .channel('global_presence')
+    // Setup Channel with Presence logic
+    const channel = supabase.channel('global_presence', {
+      config: { presence: { key: 'user' } }
+    });
+
+    channel
+      // Tracks real-time "Hearts Listening"
+      .on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        const count = Object.keys(newState).length;
+        setOnlineCount(count); 
+      })
+      // Existing Database Listeners
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -75,9 +89,7 @@ function AppContent() {
         if (payload.eventType === 'UPDATE') {
           setSecrets((prev) => prev.map(s => {
             if (s.id === payload.new.id) {
-              if (payload.new.nods > (s.nods || 0)) {
-                triggerNodPulse();
-              }
+              if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
               
               const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
               if (mySecrets.includes(s.id) && (s.nods === 0 || !s.nods) && payload.new.nods === 1) {
@@ -91,7 +103,12 @@ function AppContent() {
           }));
         }
       })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Join the presence room
+          await channel.track({ online_at: new Date().toISOString() });
+        }
+      });
 
     return () => supabase.removeChannel(channel);
   }, []);
@@ -106,9 +123,7 @@ function AppContent() {
     if (!inputText.trim()) return;
     
     if (useCurrentLocation) {
-
       setNotification("Accessing GPS...");
-      
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           await postToDatabase(inputText, pos.coords.latitude, pos.coords.longitude);
@@ -120,14 +135,12 @@ function AppContent() {
         { timeout: 10000, enableHighAccuracy: true }
       );
     } else {
-
       if (!selectedLocation) {
         setNotification("Please click on the map to choose a location.");
         setIsPlacementMode(true);
         setTimeout(() => setNotification(null), 3000);
         return;
       }
-      
       await postToDatabase(inputText, selectedLocation.lat, selectedLocation.lng);
       setSelectedLocation(null);
       setIsPlacementMode(false);
@@ -135,12 +148,12 @@ function AppContent() {
   };
 
   const markAsVisited = (id) => {
-  if (!visited.includes(id)) {
-    const updated = [...visited, id];
-    setVisited(updated);
-    localStorage.setItem("visited_secrets", JSON.stringify(updated));
-  }
-};
+    if (!visited.includes(id)) {
+      const updated = [...visited, id];
+      setVisited(updated);
+      localStorage.setItem("visited_secrets", JSON.stringify(updated));
+    }
+  };
 
   const postToDatabase = async (text, lat, lng) => {
     setNotification("Sharing to the map...");
@@ -195,29 +208,24 @@ function AppContent() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-const handleNod = async (id, currentNods) => {
-  const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
-  const hasNodded = noddedSecrets.includes(id);
+  const handleNod = async (id, currentNods) => {
+    const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
+    const hasNodded = noddedSecrets.includes(id);
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
 
-  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-  if (mySecrets.includes(id)) {
-    setNotification("You cannot echo your own silence.");
-    setTimeout(() => setNotification(null), 3000);
-    return;
-  }
+    if (mySecrets.includes(id)) {
+      setNotification("You cannot echo your own silence.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
 
-  const newCount = hasNodded ? Math.max(0, currentNods - 1) : currentNods + 1;
+    const newCount = hasNodded ? Math.max(0, currentNods - 1) : currentNods + 1;
+    setSecrets(prev => prev.map(s => s.id === id ? { ...s, nods: newCount } : s));
 
-  // Update UI immediately
-  setSecrets(prev => prev.map(s => s.id === id ? { ...s, nods: newCount } : s));
-
-  // Update LocalStorage
-  const updatedNods = hasNodded ? noddedSecrets.filter(i => i !== id) : [...noddedSecrets, id];
-  localStorage.setItem("nodded_secrets", JSON.stringify(updatedNods));
-
-  // Update Database
-  await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
-};
+    const updatedNods = hasNodded ? noddedSecrets.filter(i => i !== id) : [...noddedSecrets, id];
+    localStorage.setItem("nodded_secrets", JSON.stringify(updatedNods));
+    await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
+  };
 
   const handleAddWhisper = async (id, whisperText) => {
     const { error } = await supabase
@@ -246,7 +254,10 @@ const handleNod = async (id, currentNods) => {
       {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} setNotification={setNotification} />}
 
       <Notification message={notification} isDark={isDark} />
-      <PresenceCounter count={secrets.filter(s => s.is_listening).length} isDark={isDark} />
+      
+      {/* Updated: Uses live onlineCount */}
+      <PresenceCounter count={onlineCount} isDark={isDark} />
+      
       <ThemeToggle />
       <MenuButton isOpen={showSidebar} onClick={() => setShowSidebar(!showSidebar)} isDark={isDark} />
 
@@ -262,17 +273,15 @@ const handleNod = async (id, currentNods) => {
         }}
       />
 
-<MapContainer 
-  center={[13, 122]} 
-  zoom={4}              
-  /* --- THE NO-EDGE FIX --- */
-  minZoom={3}           // 1. Prevents zooming out to see the top/bottom edges
-  worldCopyJump={true}  // 2. Markers stay in the right place during infinite scrolling
-  noWrap={false}        // 3. Allows horizontal scrolling without a "wall"
-  /* ----------------------- */
-  zoomControl={false} 
-  className="h-full w-full z-0"
->
+      <MapContainer 
+        center={[13, 122]} 
+        zoom={4}              
+        minZoom={3}           // Fixes grey edges
+        worldCopyJump={true}  // Infinite markers
+        noWrap={false}        // Infinite horizontal scroll
+        zoomControl={false} 
+        className="h-full w-full z-0"
+      >
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
         <MapController secrets={secrets} targetPos={targetPos} setZoomLevel={setZoomLevel} />
         <MapClickHandler 
@@ -307,18 +316,17 @@ const handleNod = async (id, currentNods) => {
           />
         )}
         
-<MapMarkers 
-  secrets={secrets}
-  visited={visited}
-  isDark={true} 
-  onMarkAsVisited={markAsVisited} 
-  onNod={handleNod}
-  onWhisper={handleAddWhisper}
-  setNotification={setNotification}
-/>
+        <MapMarkers 
+          secrets={secrets}
+          visited={visited}
+          isDark={isDark} // Follows theme variable
+          onMarkAsVisited={markAsVisited} 
+          onNod={handleNod}
+          onWhisper={handleAddWhisper}
+          setNotification={setNotification}
+        />
       </MapContainer>
 
-      {/* Bottom Dock */}
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}
