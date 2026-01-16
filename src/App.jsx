@@ -325,7 +325,7 @@ function AppContent() {
           setNotification={setNotification}
         />
       </MapContainer>
-     <MapLegend/>
+     {!showManifesto && <MapLegend isDark={isDark} />}
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}

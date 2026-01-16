@@ -149,3 +149,14 @@ body:has(.bg-gray-50) .popup-text {
   height: 100dvh !important;
   width: 100vw !important;
 }
+
+/* Light Mode Glow - Makes black pins stand out on white map */
+.pin-glow-light {
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.3));
+  border: 1.5px solid rgba(255, 255, 255, 0.8) !important; /* White border helps define the black circle */
+}
+
+/* Dark Mode Glow - Keeps the white/purple pins ethereal */
+.pin-glow-dark {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+}

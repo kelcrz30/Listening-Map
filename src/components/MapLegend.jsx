@@ -32,13 +32,17 @@ export default function MapLegend({ isDark }) {
 
       <div className="space-y-4">
         {/* Unheard */}
-        <div className="flex items-start gap-3">
-          <div className="w-2.5 h-2.5 mt-1 rounded-full bg-white shadow-[0_0_8px_white]" />
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest leading-none mb-1">Unheard</p>
-            <p className="text-[9px] opacity-50 leading-relaxed">This is a secret that has drifted onto the map but hasn't been heard yet. It is waiting for the first person to acknowledge it.</p>
-          </div>
-        </div>
+<div className="flex items-start gap-3">
+  {/* Changed } to ] and updated shadow for better visibility */}
+  <div className="w-2.5 h-2.5 mt-1 rounded-full bg-[#32CD32] shadow-[0_0_8px_#32CD32]" />
+  <div>
+    <p className="text-[10px] font-bold uppercase tracking-widest leading-none mb-1">Unheard</p>
+    <p className="text-[9px] opacity-50 leading-relaxed">
+      This is a secret that has drifted onto the map but hasn't been heard yet. 
+      It is waiting for the first person to acknowledge it.
+    </p>
+  </div>
+</div>
 
         {/* Listening */}
         <div className="flex items-start gap-3">
