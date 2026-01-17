@@ -226,18 +226,32 @@ function AppContent() {
     await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
   };
 
-  const handleAddWhisper = async (id, whisperText) => {
-    const { error } = await supabase
-      .from('unspoken_words')
-      .update({ whispers: whisperText })
-      .eq('id', id);
+const handleAddWhisper = async (id, whisperText) => {
+  // Find the secret to get the existing list of replies
+  const targetSecret = secrets.find(s => s.id === id);
+  
+  // Add the new comment to the end of the existing array
+  const updatedReplies = [
+    ...(targetSecret.replies || []), 
+    { text: whisperText, created_at: new Date().toISOString() }
+  ];
 
-    if (error) {
-      setNotification("The whisper was lost in the wind.");
-    } else {
-      setNotification("Whisper sent.");
-    }
-  };
+  // Update the new 'replies' column in your database
+  const { error } = await supabase
+    .from('unspoken_words')
+    .update({ replies: updatedReplies }) 
+    .eq('id', id);
+
+  if (!error) {
+    // Update the local state so the new comment appears immediately
+    setSecrets(prev => prev.map(s => 
+      s.id === id ? { ...s, replies: updatedReplies } : s
+    ));
+    setNotification("Whisper sent.");
+  } else {
+    setNotification("The whisper was lost...");
+  }
+};
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
