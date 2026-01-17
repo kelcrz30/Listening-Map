@@ -83,19 +83,7 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                 </button>
 
                 {/* Delete Button - Only show for user's secrets */}
-                {isMySecret && (
-                  <button
-                    onClick={() => onDelete(currentSecret.id)}
-                    className={`absolute top-2 left-2 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all z-50 flex items-center gap-1.5 ${
-                      isDark 
-                        ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' 
-                        : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
-                    }`}
-                  >
-                    <span className="text-sm">🗑️</span>
-                    Delete
-                  </button>
-                )}
+
 
                 {/* NAVIGATION */}
                 {secretsAtLocation.length > 1 && (
@@ -200,29 +188,45 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                 </div>
 
                 {/* FOOTER */}
-                <div className={`flex flex-col gap-4 items-center border-t pt-4 ${isDark ? 'border-white/5' : 'border-gray-200'}`}>
-                  <div className="flex justify-between items-center w-full px-4">
-                    
-                    <button 
-                      className="flex items-center" 
-                      onClick={() => onNod(currentSecret.id, currentSecret.nods)}
-                    >
-                      <div className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
-                        hasEchoed 
-                          ? 'bg-purple-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]' 
-                          : (isDark ? 'bg-zinc-600' : 'bg-gray-400')
-                      }`} />
-                      <span className={`text-[10px] tracking-widest uppercase ${hasEchoed ? 'text-purple-400' : 'text-zinc-500'}`}>
-                        {currentSecret.nods || 0} Echoes
-                      </span>
-                    </button>
+{/* FOOTER */}
+<div className={`flex flex-col gap-4 items-center border-t pt-4 ${isDark ? 'border-white/5' : 'border-gray-200'}`}>
+  <div className="flex justify-between items-center w-full px-4">
+    <button 
+      className="flex items-center" 
+      onClick={() => onNod(currentSecret.id, currentSecret.nods)}
+    >
+      <div className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
+        hasEchoed 
+          ? 'bg-purple-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]' 
+          : (isDark ? 'bg-zinc-600' : 'bg-gray-400')
+      }`} />
+      <span className={`text-[10px] tracking-widest uppercase ${hasEchoed ? 'text-purple-400' : 'text-zinc-500'}`}>
+        {currentSecret.nods || 0} Echoes
+      </span>
+    </button>
 
-                    <span className={`text-[8px] uppercase tracking-widest ${isDark ? 'text-zinc-600' : 'text-gray-500'}`}>
-                      {isVisited ? "Heard" : "Unheard"}
-                    </span>
-                  </div>
-                  <ListeningButton id={currentSecret.id} isListening={currentSecret.is_listening} />
-                </div>
+    <span className={`text-[8px] uppercase tracking-widest ${isDark ? 'text-zinc-600' : 'text-gray-500'}`}>
+      {isVisited ? "Heard" : "Unheard"}
+    </span>
+  </div>
+
+  {/* Listening Button */}
+  <ListeningButton id={currentSecret.id} isListening={currentSecret.is_listening} />
+
+  {/* NEW DELETE POSITION: Moved to bottom for better design flow */}
+  {isMySecret && (
+    <button
+      onClick={() => onDelete(currentSecret.id)}
+      className={`mt-2 w-full py-2 rounded-lg text-[8px] font-bold uppercase tracking-[0.3em] transition-all opacity-40 hover:opacity-100 flex items-center justify-center gap-2 ${
+        isDark 
+          ? 'text-red-400/50 hover:text-red-400' 
+          : 'text-red-500'
+      }`}
+    >
+      Release this secret
+    </button>
+  )}
+</div>
               </div>
             </Popup>
           </Marker>
