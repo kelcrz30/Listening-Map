@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { Analytics } from "@vercel/analytics/react";
 import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
@@ -18,17 +19,21 @@ import PresenceCounter from "./components/PresenceCounter";
 import MenuButton from "./components/MenuButton";
 import ThemeToggle from "./components/ThemeToggle";
 import Sidebar from "./components/Sidebar";
+import DeleteConfirmationModal from "./components/DeleteConfirmationModal";
 import MapMarkers from "./components/MapMarkers";
 import BottomDock from "./components/BottomDock";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
+import DonationModal from "./components/DonationModal";
+
 
 export default function App() {
   return (
     <ThemeProvider>
       <AppContent />
+      <Analytics />
     </ThemeProvider>
   );
 }
@@ -48,11 +53,13 @@ function AppContent() {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [useCurrentLocation, setUseCurrentLocation] = useState(true);
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
   
   // NEW: State for real-time presence
   const [onlineCount, setOnlineCount] = useState(1);
 
- useEffect(() => {
+  useEffect(() => {
     const fetchSecrets = async () => {
       const { data } = await supabase
         .from('unspoken_words')
@@ -226,32 +233,84 @@ function AppContent() {
     await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
   };
 
-const handleAddWhisper = async (id, whisperText) => {
-  // Find the secret to get the existing list of replies
-  const targetSecret = secrets.find(s => s.id === id);
-  
-  // Add the new comment to the end of the existing array
-  const updatedReplies = [
-    ...(targetSecret.replies || []), 
-    { text: whisperText, created_at: new Date().toISOString() }
-  ];
+  const handleAddWhisper = async (id, whisperText) => {
+    if (!whisperText.trim()) return;
 
-  // Update the new 'replies' column in your database
-  const { error } = await supabase
-    .from('unspoken_words')
-    .update({ replies: updatedReplies }) 
-    .eq('id', id);
+    // First, fetch the current secret from database to get latest replies
+    const { data: currentSecret, error: fetchError } = await supabase
+      .from('unspoken_words')
+      .select('replies')
+      .eq('id', id)
+      .single();
 
-  if (!error) {
-    // Update the local state so the new comment appears immediately
-    setSecrets(prev => prev.map(s => 
-      s.id === id ? { ...s, replies: updatedReplies } : s
-    ));
-    setNotification("Whisper sent.");
-  } else {
-    setNotification("The whisper was lost...");
-  }
-};
+    if (fetchError) {
+      setNotification("Could not send whisper...");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    // Add the new whisper to the existing replies
+    const updatedReplies = [
+      ...(currentSecret?.replies || []), 
+      { text: whisperText, created_at: new Date().toISOString() }
+    ];
+
+    // Update the database
+    const { error } = await supabase
+      .from('unspoken_words')
+      .update({ replies: updatedReplies }) 
+      .eq('id', id);
+
+    if (!error) {
+      // Update local state if the secret is currently loaded
+      setSecrets(prev => prev.map(s => 
+        s.id === id ? { ...s, replies: updatedReplies } : s
+      ));
+      setNotification("Whisper sent.");
+      setTimeout(() => setNotification(null), 3000);
+    } else {
+      setNotification("The whisper was lost...");
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  const handleDonateClick = () => {
+    setShowDonationModal(true);
+  };
+
+  const handleDeleteSecret = (id) => {
+    setDeleteTargetId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return;
+    
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    
+    if (!mySecrets.includes(deleteTargetId)) {
+      setNotification("You can only delete your own secrets.");
+      setTimeout(() => setNotification(null), 3000);
+      setDeleteTargetId(null);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('unspoken_words')
+      .delete()
+      .eq('id', deleteTargetId);
+
+    if (!error) {
+      setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
+      const updatedSecrets = mySecrets.filter(secretId => secretId !== deleteTargetId);
+      localStorage.setItem("my_secrets", JSON.stringify(updatedSecrets));
+      setNotification("Secret deleted.");
+    } else {
+      setNotification("Failed to delete.");
+    }
+    
+    setTimeout(() => setNotification(null), 3000);
+    setDeleteTargetId(null);
+  };
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
@@ -265,6 +324,21 @@ const handleAddWhisper = async (id, whisperText) => {
       {showManifesto && <ManifestoOverlay onClose={() => setShowManifesto(false)} />}
       {showAboutModal && <AboutModal onClose={() => setShowAboutModal(false)} />}
       {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} setNotification={setNotification} />}
+      {showDonationModal && (
+        <DonationModal 
+          isOpen={showDonationModal}
+          onClose={() => setShowDonationModal(false)} 
+          isDark={isDark}
+        />
+      )}
+      {deleteTargetId && (
+        <DeleteConfirmationModal
+          isOpen={!!deleteTargetId}
+          onClose={() => setDeleteTargetId(null)}
+          onConfirm={confirmDelete}
+          isDark={isDark}
+        />
+      )}
 
       <Notification message={notification} isDark={isDark} />
       
@@ -289,9 +363,9 @@ const handleAddWhisper = async (id, whisperText) => {
       <MapContainer 
         center={[13, 122]} 
         zoom={4}              
-        minZoom={3}           // Fixes grey edges
-        worldCopyJump={true}  // Infinite markers
-        noWrap={false}        // Infinite horizontal scroll
+        minZoom={3}           
+        worldCopyJump={true}  
+        noWrap={false}        
         zoomControl={false} 
         className="h-full w-full z-0"
       >
@@ -332,23 +406,28 @@ const handleAddWhisper = async (id, whisperText) => {
         <MapMarkers 
           secrets={secrets}
           visited={visited}
-          isDark={isDark} // Follows theme variable
+          isDark={isDark}
           onMarkAsVisited={markAsVisited} 
           onNod={handleNod}
           onWhisper={handleAddWhisper}
+          onDelete={handleDeleteSecret} 
           setNotification={setNotification}
         />
       </MapContainer>
-     {!showManifesto && <MapLegend isDark={isDark} />}
+      
+      {!showManifesto && <MapLegend isDark={isDark} />}
+      
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}
+        onDonateClick={handleDonateClick}
         onPost={handlePost}
         isDark={isDark}
         useCurrentLocation={useCurrentLocation}
         onLocationModeToggle={handleLocationModeToggle}
         selectedLocation={selectedLocation}
       />
+      <Analytics />
     </div>
   );
 }
