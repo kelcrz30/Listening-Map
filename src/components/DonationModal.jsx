@@ -4,42 +4,55 @@ export default function DonationModal({ isOpen, onClose, isDark }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className={`max-w-sm w-full p-8 rounded-3xl text-center border ${
-        isDark ? 'bg-zinc-900 border-white/10 text-white' : 'bg-white border-black/5 text-black'
+    <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-500">
+      <div className={`max-w-sm w-full p-10 rounded-[2.5rem] text-center border shadow-2xl ${
+        isDark ? 'bg-zinc-950 border-white/5 text-white' : 'bg-white border-black/5 text-black'
       }`}>
         
-        <h2 className="text-xl font-black uppercase tracking-[0.3em] mb-4">Keep Sulyap Alive</h2>
+        {/* Poetic Header */}
+        <h2 className="text-[10px] font-light uppercase tracking-[0.5em] mb-6 opacity-60">
+          Support the Silence
+        </h2>
         
-        <p className={`text-[12px] md:text-[13px] opacity-70 mb-8 px-2 leading-relaxed font-serif italic`}>
-          This map is a quiet space for everyone's unspoken words. 
-          As the echoes grow, so do the costs of the database and hosting. 
-          Your kindness helps keep the lights on and the whispers drifting.
+        <p className={`text-sm md:text-base mb-10 leading-relaxed font-serif italic ${
+          isDark ? 'text-zinc-400' : 'text-zinc-600'
+        }`}>
+          "Every peso helps keep these whispers drifting through the digital wind."
         </p>
 
-        {/* GCash QR Code */}
-        <div className="bg-white p-3 rounded-2xl mb-8 inline-block shadow-2xl border-4 border-white transform transition-transform hover:scale-105">
-          <img 
-            src="/gcash-qr.jpg" 
-            alt="GCash QR Code" 
-            className="w-56 h-56 md:w-64 md:h-64 object-contain"
-          />
+        {/* GCash QR Section */}
+        <div className="relative group mb-8">
+          {/* Subtle Glow Effect */}
+          <div className="absolute -inset-1 bg-blue-500/20 rounded-[2rem] blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+          
+          <div className="relative bg-white p-4 rounded-[2rem] inline-block border border-blue-100">
+            <img 
+              src="/gcash-qr.jpg" 
+              alt="Scan via GCash" 
+              className="w-52 h-52 md:w-60 md:h-60 object-contain rounded-xl"
+            />
+          </div>
         </div>
 
-        <div className="space-y-4">
-          <p className="text-[10px] uppercase tracking-[0.3em] opacity-40">
-            Scan to contribute
-          </p>
+        <div className="space-y-6">
+          <div className="flex flex-col gap-1">
+            <p className="text-[9px] uppercase tracking-[0.4em] font-bold text-blue-500">
+              Scan this on GCash
+            </p>
+            <p className={`text-[8px] uppercase tracking-[0.2em] opacity-30 ${isDark ? 'text-white' : 'text-black'}`}>
+              Express Send • Thank you for your kindness
+            </p>
+          </div>
           
           <button 
             onClick={onClose}
-            className={`w-full py-4 rounded-xl text-[11px] font-bold uppercase tracking-[0.2em] transition-all active:scale-95 ${
+            className={`w-full py-4 rounded-full text-[9px] font-bold uppercase tracking-[0.3em] transition-all active:scale-95 border ${
               isDark 
-                ? 'bg-white/5 hover:bg-white/10 text-white border border-white/10' 
-                : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900'
+                ? 'bg-transparent hover:bg-white/5 text-white/60 hover:text-white border-white/10' 
+                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-500 border-zinc-200'
             }`}
           >
-            Return to the Map
+            Close
           </button>
         </div>
       </div>
