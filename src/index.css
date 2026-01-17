@@ -105,3 +105,19 @@ body:has(.bg-gray-50) .popup-text {
 .pin-glow-dark {
   filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
 }
+
+/* Prevents iOS zoom on inputs while keeping them looking small */
+@media screen and (max-width: 768px) {
+  input[type="text"], 
+  input[type="number"], 
+  textarea {
+    font-size: 16px !important; /* Minimum size to prevent iOS zoom */
+  }
+
+  /* Optional: Scale it back down visually if 16px is too big for your UI */
+  .popup-input-fix {
+    transform: scale(0.8);
+    transform-origin: left center;
+    width: 125%; /* Compensate for the scale reduction */
+  }
+}
