@@ -115,14 +115,14 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                 </span>
                 
                 {/* Main Text with Scrolling - FIXED OVERFLOW */}
-                <div 
-                  className={`max-h-[120px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar touch-pan-y`}
-                  onWheel={(e) => e.stopPropagation()}
-                >
-                  <p className={`text-lg font-serif italic leading-relaxed break-words break-all whitespace-pre-wrap ${isDark ? 'text-white' : 'text-black'}`}>
-                    "{currentSecret.text}"
-                  </p>
-                </div>
+<div 
+  className={`min-h-[60px] max-h-[250px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar touch-pan-y`}
+  onWheel={(e) => e.stopPropagation()}
+>
+  <p className={`text-md md:textlg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${isDark ? 'text-white' : 'text-black'}`}>
+    "{currentSecret.text}"
+  </p>
+</div>
 
                 {/* WHISPER THREAD - FIXED OVERFLOW */}
                 <div className="mb-4 px-2">

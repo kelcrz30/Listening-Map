@@ -50,13 +50,13 @@ export default function Sidebar({ isOpen, secrets, visited, isDark, onSecretClic
                   {formatRelativeTime(s.created_at)}
                 </p>
               </div>
-              <p className={`text-lg sm:text-xl font-serif italic leading-relaxed transition-all ${
-                visited.includes(s.id) 
-                  ? (isDark ? 'text-zinc-600' : 'text-gray-400') 
-                  : (isDark ? 'text-zinc-400 group-hover:text-white' : 'text-gray-700 group-hover:text-gray-900')
-              }`}>
-                "{s.text}"
-              </p>
+<p className={`text-lg sm:text-xl font-serif italic leading-relaxed transition-all line-clamp-4 overflow-hidden text-ellipsis ${
+  visited.includes(s.id) 
+    ? (isDark ? 'text-zinc-600' : 'text-gray-400') 
+    : (isDark ? 'text-zinc-400 group-hover:text-white' : 'text-gray-700 group-hover:text-gray-900')
+}`}>
+  "{s.text}"
+</p>
             </div>
           ))}
         </div>

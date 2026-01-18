@@ -4,7 +4,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
-
+import { checkText } from "./utils/wordFilter";
 // Components
 import Atmosphere from "./components/Atmosphere";
 import Constellations from "./components/Constellations";
@@ -27,6 +27,7 @@ import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
 import DonationModal from "./components/DonationModal";
+import NotificationBell from "./components/NotificationBell";
 
 
 export default function App() {
@@ -125,33 +126,43 @@ function AppContent() {
     setTimeout(() => setIsNodding(false), 800);
   };
 
-  const handlePost = async (inputText) => {
-    if (!inputText.trim()) return;
-    
-    if (useCurrentLocation) {
-      setNotification("Accessing GPS...");
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          await postToDatabase(inputText, pos.coords.latitude, pos.coords.longitude);
-        },
-        (geoError) => {
-          alert("Location Error: Please allow location access to post.");
-          setNotification("Location denied.");
-        },
-        { timeout: 10000, enableHighAccuracy: true }
-      );
-    } else {
-      if (!selectedLocation) {
-        setNotification("Please click on the map to choose a location.");
-        setIsPlacementMode(true);
-        setTimeout(() => setNotification(null), 3000);
-        return;
-      }
-      await postToDatabase(inputText, selectedLocation.lat, selectedLocation.lng);
-      setSelectedLocation(null);
-      setIsPlacementMode(false);
+const handlePost = async (inputText) => {
+  if (!inputText.trim()) return;
+
+  // 1. Run the filter check first
+  const result = checkText(inputText);
+
+if (result.isProfane) {
+    setNotification(`Silence must be kind. Found ${result.count} forbidden word(s).`);
+    setTimeout(() => setNotification(null), 4000);
+    return; // This stops the post from going to Supabase
+  }
+
+  // 2. Your existing location logic continues here...
+  if (useCurrentLocation) {
+    setNotification("Accessing GPS...");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        await postToDatabase(inputText, pos.coords.latitude, pos.coords.longitude);
+      },
+      (geoError) => {
+        alert("Location Error: Please allow location access to post.");
+        setNotification("Location denied.");
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  } else {
+    if (!selectedLocation) {
+      setNotification("Please click on the map to choose a location.");
+      setIsPlacementMode(true);
+      setTimeout(() => setNotification(null), 3000);
+      return;
     }
-  };
+    await postToDatabase(inputText, selectedLocation.lat, selectedLocation.lng);
+    setSelectedLocation(null);
+    setIsPlacementMode(false);
+  }
+};
 
   const markAsVisited = (id) => {
     if (!visited.includes(id)) {
@@ -232,47 +243,53 @@ function AppContent() {
     localStorage.setItem("nodded_secrets", JSON.stringify(updatedNods));
     await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
   };
+const handleAddWhisper = async (id, whisperText) => {
+  if (!whisperText.trim()) return;
 
-  const handleAddWhisper = async (id, whisperText) => {
-    if (!whisperText.trim()) return;
+  // 1. Run the profanity filter check first
+  const result = checkText(whisperText);
 
-    // First, fetch the current secret from database to get latest replies
-    const { data: currentSecret, error: fetchError } = await supabase
-      .from('unspoken_words')
-      .select('replies')
-      .eq('id', id)
-      .single();
+  if (result.isProfane) {
+    // Block the whisper and notify the user
+    setNotification(`Whispers must be gentle. Found ${result.count} forbidden word(s).`);
+    setTimeout(() => setNotification(null), 4000);
+    return; // Stop the function here
+  }
 
-    if (fetchError) {
-      setNotification("Could not send whisper...");
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
+  // 2. Proceed with database logic if clean
+  const { data: currentSecret, error: fetchError } = await supabase
+    .from('unspoken_words')
+    .select('replies')
+    .eq('id', id)
+    .single();
 
-    // Add the new whisper to the existing replies
-    const updatedReplies = [
-      ...(currentSecret?.replies || []), 
-      { text: whisperText, created_at: new Date().toISOString() }
-    ];
+  if (fetchError) {
+    setNotification("Could not send whisper...");
+    setTimeout(() => setNotification(null), 3000);
+    return;
+  }
 
-    // Update the database
-    const { error } = await supabase
-      .from('unspoken_words')
-      .update({ replies: updatedReplies }) 
-      .eq('id', id);
+  const updatedReplies = [
+    ...(currentSecret?.replies || []), 
+    { text: whisperText, created_at: new Date().toISOString() }
+  ];
 
-    if (!error) {
-      // Update local state if the secret is currently loaded
-      setSecrets(prev => prev.map(s => 
-        s.id === id ? { ...s, replies: updatedReplies } : s
-      ));
-      setNotification("Whisper sent.");
-      setTimeout(() => setNotification(null), 3000);
-    } else {
-      setNotification("The whisper was lost...");
-      setTimeout(() => setNotification(null), 3000);
-    }
-  };
+  const { error } = await supabase
+    .from('unspoken_words')
+    .update({ replies: updatedReplies }) 
+    .eq('id', id);
+
+  if (!error) {
+    setSecrets(prev => prev.map(s => 
+      s.id === id ? { ...s, replies: updatedReplies } : s
+    ));
+    setNotification("Whisper sent.");
+    setTimeout(() => setNotification(null), 3000);
+  } else {
+    setNotification("The whisper was lost...");
+    setTimeout(() => setNotification(null), 3000);
+  }
+};
 
   const handleDonateClick = () => {
     setShowDonationModal(true);
@@ -345,21 +362,37 @@ function AppContent() {
       {/* Updated: Uses live onlineCount */}
       <PresenceCounter count={onlineCount} isDark={isDark} />
       
-      <ThemeToggle />
-      <MenuButton isOpen={showSidebar} onClick={() => setShowSidebar(!showSidebar)} isDark={isDark} />
 
-      <Sidebar
-        isOpen={showSidebar}
-        secrets={secrets}
-        visited={visited}
-        isDark={isDark}
-        onSecretClick={(lat, lng, id) => {
-          setTargetPos([lat, lng]);
-          setShowSidebar(false);
-          markAsVisited(id);
-        }}
-      />
+{/* Floating UI Controls - TOP RIGHT */}
+<div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001] pointer-events-auto">
+  <NotificationBell 
+    isDark={isDark}
+    secrets={secrets}
+    onNotificationClick={(lat, lng, id) => {
+      setTargetPos([lat, lng]);
+      markAsVisited(id);
+    }}
+  />
+  <ThemeToggle />
+  <MenuButton 
+    isOpen={showSidebar} 
+    onClick={() => setShowSidebar(!showSidebar)} 
+    isDark={isDark} 
+  />
+</div>
 
+{/* Sidebar also needs high Z-index */}
+<Sidebar
+  isOpen={showSidebar}
+  secrets={secrets}
+  visited={visited}
+  isDark={isDark}
+  onSecretClick={(lat, lng, id) => {
+    setTargetPos([lat, lng]);
+    setShowSidebar(false);
+    markAsVisited(id);
+  }}
+/>
       <MapContainer 
         center={[13, 122]} 
         zoom={4}              

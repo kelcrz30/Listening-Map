@@ -4,7 +4,7 @@ export default function MenuButton({ isOpen, onClick, isDark }) {
   return (
     <button
       onClick={onClick}
-      className={`fixed top-6 sm:top-12 right-4 sm:right-12 z-[1001] p-3 sm:p-4 rounded-full border backdrop-blur-md ${
+      className={`p-3 sm:p-4 rounded-full border backdrop-blur-md transition-all ${
         isDark 
           ? 'bg-white/5 hover:bg-white/10 border-white/10' 
           : 'bg-white hover:bg-gray-50 border-gray-200 shadow-lg'

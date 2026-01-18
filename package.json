@@ -10,14 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@changey/react-leaflet-markercluster": "^4.0.0-rc1",
     "@emailjs/browser": "^4.4.1",
     "@supabase/supabase-js": "^2.90.1",
     "@vercel/analytics": "^1.6.1",
+    "bad-words": "^4.0.0",
     "framer-motion": "^12.26.2",
     "leaflet": "^1.9.4",
+    "leaflet.markercluster": "^1.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-leaflet": "^5.0.0",
+    "react-leaflet-cluster": "^4.0.0",
+    "react-leaflet-markercluster": "^5.0.0-rc.0",
     "react-simple-maps": "^3.0.0"
   },
   "devDependencies": {
