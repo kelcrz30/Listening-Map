@@ -5,7 +5,7 @@ import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
 import { checkText } from "./utils/wordFilter";
-import { Turnstile } from '@marsidev/react-turnstile';
+
 // Components
 import Atmosphere from "./components/Atmosphere";
 import Constellations from "./components/Constellations";
@@ -29,8 +29,7 @@ import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
 import DonationModal from "./components/DonationModal";
 import NotificationBell from "./components/NotificationBell";
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+
 
 export default function App() {
   return (
@@ -58,7 +57,6 @@ function AppContent() {
   const [useCurrentLocation, setUseCurrentLocation] = useState(true);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
-  
   // NEW: State for real-time presence
   const [onlineCount, setOnlineCount] = useState(1);
 
@@ -131,9 +129,8 @@ function AppContent() {
 const handlePost = async (inputText, captchaToken) => {
   if (!inputText.trim()) return;
 
-  // Security Check
-  if (!captchaToken) {
-    setNotification("Please verify the captcha first.");
+if (!captchaToken) {
+    setNotification("Waiting for security check... please try again in a second.");
     return;
   }
 
@@ -173,31 +170,37 @@ const handlePost = async (inputText, captchaToken) => {
 const postToEdgeFunction = async (text, lat, lng, token) => {
   setNotification("Verifying and sharing...");
   
-  // Tinatawag ang Supabase Edge Function ('post-word')
-  const { data, error } = await supabase.functions.invoke('post-word', {
-    body: { 
-      word: text, 
-      lat: lat, 
-      lng: lng, 
-      captchaToken: token 
-    },
-  });
+  try {
+    // Call the Supabase Edge Function ('post-word')
+    const { data, error } = await supabase.functions.invoke('post-word', {
+      body: { 
+        word: text, 
+        lat: lat, 
+        lng: lng, 
+        captchaToken: token 
+      },
+    });
 
-  if (error) {
-    console.error("Post Error:", error);
-    setNotification("Post failed: Verification error.");
-    return;
-  }
+    if (error) {
+      console.error("Post Error:", error);
+      setNotification("Post failed: Verification error.");
+      return;
+    }
 
-  // Success logic
-  // Dahil may Realtime subscription ka na sa AppContent, 
-  // kusa nang lalabas yung bagong marker sa map mo.
-  setNotification("Message sent.");
-  
-  // Opsyonal: I-save ang ID sa local storage para pwede mong i-delete later
-  if (data && data.id) {
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, data.id]));
+    console.log("Edge Function Response:", data); // DEBUG: See what we got back
+
+    // CRITICAL: Save the secret ID so delete button appears
+    if (data && data.id) {
+      const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+      localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, data.id]));
+      setNotification("Message sent.");
+    } else {
+      console.error("Edge Function didn't return secret ID. Full response:", data);
+      setNotification("Posted but couldn't track ownership.");
+    }
+  } catch (err) {
+    console.error("Unexpected error:", err);
+    setNotification("Post failed unexpectedly.");
   }
 };
   const markAsVisited = (id) => {
@@ -491,12 +494,14 @@ const handleAddWhisper = async (id, whisperText) => {
       </MapContainer>
       
       {!showManifesto && <MapLegend isDark={isDark} />}
+
+
       
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}
         onDonateClick={handleDonateClick}
-        onPost={handlePost}
+        onPost={(text, token) => handlePost(text, token)}
         isDark={isDark}
         useCurrentLocation={useCurrentLocation}
         onLocationModeToggle={handleLocationModeToggle}

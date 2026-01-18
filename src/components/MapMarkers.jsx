@@ -5,11 +5,9 @@ import { formatRelativeTime } from '../utils/timeUtils';
 import ListeningButton from './ListeningButton';
 import L from 'leaflet';
 
-
 export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, onNod, onWhisper, onDelete }) {
   const [whisperInput, setWhisperInput] = useState("");
-  const [threadIndices, setThreadIndices] = useState({})
-  ;
+  const [threadIndices, setThreadIndices] = useState({});
   const [zoomLevel, setZoomLevel] = useState(4);
   const map = useMap();
   
@@ -37,45 +35,38 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
     return distance <= thresholdKm;
   };
 
-  // Calculate grid-based clustering with organic offset
+  // Calculate grid-based clustering with viewport filtering
   const clusteredMarkers = useMemo(() => {
+    // Get current map bounds to only show visible markers
     const bounds = map.getBounds();
     const visibleSecrets = secrets.filter(s => 
       bounds.contains([s.lat, s.lng])
     );
 
-    // Zoom 10+ : Individual markers without offset
-    if (zoomLevel >= 10) {
-      return visibleSecrets.map(s => {
-        return {
-          position: [s.lat, s.lng],
-          secrets: [s],
-          isCluster: false,
-        };
-      });
+    // ONLY show individual markers at zoom 10+
+    if (zoomLevel >= 12) {
+      return visibleSecrets.map(s => ({
+        position: [s.lat, s.lng],
+        secrets: [s],
+        isCluster: false,
+      }));
     }
 
-    // Grid size based on zoom level
+    // Grid size based on zoom level - ALWAYS cluster below zoom 10
     const gridSize = zoomLevel < 4 ? 10 : zoomLevel < 6 ? 5 : zoomLevel < 8 ? 2 : 0.5;
     const clusters = new Map();
 
     visibleSecrets.forEach(secret => {
+      // Create grid cell key
       const latKey = Math.floor(secret.lat / gridSize) * gridSize;
       const lngKey = Math.floor(secret.lng / gridSize) * gridSize;
       const key = `${latKey},${lngKey}`;
 
       if (!clusters.has(key)) {
-        // Add a bit of jitter to the cluster center to prevent perfect overlap
-        const clusterSeed = key.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-        const jitter = (gridSize * 0.15); // Move center by up to 15% of grid size
-        
         clusters.set(key, {
-          position: [
-            (latKey + gridSize/2) + (Math.sin(clusterSeed) * jitter), 
-            (lngKey + gridSize/2) + (Math.cos(clusterSeed) * jitter)
-          ],
+          position: [latKey + gridSize/2, lngKey + gridSize/2],
           secrets: [],
-          isCluster: true,
+          isCluster: true, // Always treat as cluster when zoomed out
         });
       }
       clusters.get(key).secrets.push(secret);
@@ -98,31 +89,6 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
           const count = cluster.secrets.length;
           const size = count > 50 ? 60 : count > 10 ? 50 : 40;
           
-          // Determine dominant state for cluster color
-          const echoedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
-          const hasListening = cluster.secrets.some(s => s.is_listening);
-          const hasEchoed = cluster.secrets.some(s => echoedSecrets.includes(s.id));
-          const hasUnheard = cluster.secrets.some(s => !visited.includes(s.id) && !s.is_listening);
-          
-          // Priority: Listening > Echoed > Unheard
-          let clusterColor, clusterGlow;
-          if (hasListening) {
-            clusterColor = isDark 
-              ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.95), rgba(251, 146, 60, 0.9))' 
-              : 'linear-gradient(135deg, rgba(249, 115, 22, 0.9), rgba(251, 146, 60, 0.85))';
-            clusterGlow = 'rgba(249, 115, 22, 0.5)';
-          } else if (hasEchoed) {
-            clusterColor = isDark 
-              ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(168, 85, 247, 0.9))' 
-              : 'linear-gradient(135deg, rgba(139, 92, 246, 0.9), rgba(168, 85, 247, 0.85))';
-            clusterGlow = 'rgba(139, 92, 246, 0.5)';
-          } else {
-            clusterColor = isDark 
-              ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(20, 184, 166, 0.9))' 
-              : 'linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(20, 184, 166, 0.85))';
-            clusterGlow = 'rgba(16, 185, 129, 0.5)';
-          }
-          
           const clusterIcon = L.divIcon({
             html: `
               <div style="
@@ -131,13 +97,25 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                 height: ${size}px;
                 cursor: pointer;
               ">
+                <!-- Outer pulse ring -->
+                <div style="
+                  position: absolute;
+                  inset: -8px;
+                  border-radius: 50%;
+                  background: ${isDark ? 'rgba(139, 92, 246, 0.2)' : 'rgba(139, 92, 246, 0.15)'};
+                  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+                "></div>
+                
                 <!-- Main cluster circle -->
                 <div style="
                   position: relative;
                   width: 100%;
                   height: 100%;
                   border-radius: 50%;
-                  background: ${clusterColor};
+                  background: ${isDark 
+                    ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(168, 85, 247, 0.9))' 
+                    : 'linear-gradient(135deg, rgba(139, 92, 246, 0.9), rgba(168, 85, 247, 0.85))'
+                  };
                   display: flex;
                   flex-direction: column;
                   align-items: center;
@@ -145,15 +123,17 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                   font-weight: 800;
                   color: white;
                   box-shadow: 
-                    0 0 20px ${clusterGlow},
-                    0 4px 16px rgba(0, 0, 0, 0.2);
-                  border: 2px solid rgba(255, 255, 255, 0.3);
-                  ${hasListening ? 'animation: pulse-listening 1.5s ease-in-out infinite;' : ''}
+                    0 0 30px ${isDark ? 'rgba(139, 92, 246, 0.6)' : 'rgba(139, 92, 246, 0.4)'},
+                    0 8px 24px rgba(0, 0, 0, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+                  border: 2px solid rgba(255, 255, 255, 0.4);
+                  backdrop-filter: blur(8px);
+                  transition: all 0.3s ease;
                 ">
                   <span style="
                     font-size: ${size > 50 ? '22px' : size > 40 ? '18px' : '15px'};
                     line-height: 1;
-                    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
                   ">${count}</span>
                   <span style="
                     font-size: ${size > 50 ? '7px' : '6px'};
@@ -167,16 +147,14 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
               </div>
               
               <style>
-                @keyframes pulse-listening {
+                @keyframes pulse-ring {
                   0%, 100% {
-                    box-shadow: 
-                      0 0 20px ${clusterGlow},
-                      0 4px 16px rgba(0, 0, 0, 0.2);
+                    transform: scale(1);
+                    opacity: 0.5;
                   }
                   50% {
-                    box-shadow: 
-                      0 0 30px ${clusterGlow},
-                      0 4px 20px rgba(0, 0, 0, 0.3);
+                    transform: scale(1.3);
+                    opacity: 0;
                   }
                 }
               </style>
@@ -211,9 +189,9 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                   </button>
 
                   {/* Header */}
-                  <div className="text-center mb-4 pb-4 border-b border-purple-500/20">
+                  <div className="text-center mb-4 pb-4 border-b border-from-green-600">
                     <div className="inline-flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-600  flex items-center justify-center text-white font-bold text-sm shadow-lg">
                         {count}
                       </div>
                       <h3 className={`text-base font-bold bg-gradient-to-r ${
@@ -239,11 +217,10 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                           key={secret.id}
                           onClick={() => {
                             map.closePopup();
-                            // Zoom to level 12+ to ensure individual markers are shown
-                            map.setView([secret.lat, secret.lng], 12, { animate: true });
                             setTimeout(() => {
+                              map.setView([secret.lat, secret.lng], Math.max(zoomLevel, 10));
                               onMarkAsVisited(secret.id);
-                            }, 500);
+                            }, 100);
                           }}
                           className={`group w-full text-left p-3 rounded-xl border transition-all hover:scale-[1.02] hover:shadow-lg relative overflow-hidden ${
                             isDark 
@@ -439,7 +416,7 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                     {currentSecret.replies?.map((reply, index) => (
                       <div key={index} className="border-b border-white/5 last:border-0 pb-2">
                         <p className={`text-[11px] italic break-words break-all ${isDark ? 'text-orange-200/80' : 'text-orange-700'}`}>
-                          "{typeof reply === 'object' ? reply.text : reply}"
+                          "{reply.text || reply}"
                         </p>
                         <span className="text-[7px] uppercase opacity-30 mt-1 block">
                           {reply.created_at ? formatRelativeTime(reply.created_at) : 'recently'}
@@ -447,6 +424,7 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                       </div>
                     ))}
                     
+                    {/* Show message if no whispers yet */}
                     {!currentSecret.whispers && (!currentSecret.replies || currentSecret.replies.length === 0) && (
                       <p className="text-[10px] italic opacity-30 text-center py-2">
                         No whispers yet... be the first
@@ -487,7 +465,7 @@ export default function MapMarkers({ secrets, visited, isDark, onMarkAsVisited, 
                     >
                       <div className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
                         hasEchoed 
-                          ? 'bg-purple-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]' 
+                          ? 'bg-green-600 shadow-[0_0_10px_rgba(139,92,246,0.5)]' 
                           : (isDark ? 'bg-zinc-600' : 'bg-gray-400')
                       }`} />
                       <span className={`text-[10px] tracking-widest uppercase ${hasEchoed ? 'text-purple-400' : 'text-zinc-500'}`}>
