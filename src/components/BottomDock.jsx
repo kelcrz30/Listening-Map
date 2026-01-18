@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import LocationModeToggle from './LocationModeToggle';
+import { Turnstile } from '@marsidev/react-turnstile'; // Siguraduhing naka-install ito
+
 
 export default function BottomDock({ 
   onAboutClick, 
@@ -12,10 +14,13 @@ export default function BottomDock({
   selectedLocation 
 }) {
   const [inputText, setInputText] = useState("");
+  const [captchaToken, setCaptchaToken] = useState(null); // State para sa token
 
   const handlePost = () => {
-    onPost(inputText);
+    // Ipasa ang inputText at captchaToken sa handlePost ng App.jsx
+    onPost(inputText, captchaToken);
     setInputText("");
+    // Opsyonal: wag i-reset ang token dito para kung mag-fail ang post, di na uulit ng captcha agad
   };
 
   const getPlaceholder = () => {
@@ -31,7 +36,18 @@ export default function BottomDock({
   return (
     <div className="fixed bottom-4 sm:bottom-12 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-5xl px-3 sm:px-6 flex flex-col items-center justify-center gap-3">
       
-      {/* Location Mode Selector - Only show when input has text */}
+      {/* CAPTCHA Widget - Lalabas lang kapag may sinusulat na */}
+      {inputText.trim() && (
+        <div className="animate-fade-in-up mb-1">
+          <Turnstile 
+            siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
+            onSuccess={(token) => setCaptchaToken(token)}
+            theme={isDark ? 'dark' : 'light'}
+          />
+        </div>
+      )}
+
+      {/* Location Mode Selector */}
       {inputText.trim() && (
         <div className="w-full sm:w-auto flex justify-center animate-fade-in-up">
           <LocationModeToggle 
@@ -90,7 +106,8 @@ export default function BottomDock({
           />
           <button
             onClick={handlePost}
-            disabled={!inputText.trim() || (!useCurrentLocation && !selectedLocation)}
+
+            disabled={!inputText.trim() || (!useCurrentLocation && !selectedLocation) || !captchaToken}
             className={`text-[8px] sm:text-[9px] font-bold px-4 sm:px-8 py-3 sm:py-4 rounded-lg sm:rounded-xl uppercase tracking-[0.3em] sm:tracking-[0.4em] border transition-all ${
               isDark 
                 ? 'bg-white/5 hover:bg-white/10 text-white border-white/10 disabled:opacity-30 disabled:cursor-not-allowed' 

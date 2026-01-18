@@ -70,14 +70,14 @@ export default function NotificationBell({ isDark, secrets, onNotificationClick 
   };
 
   // REMOVED "if (allNotifications.length === 0) return null;" so the bell stays visible
-  return (
+ return (
     <>
       <button
         onClick={() => setShowModal(true)}
         className={`relative p-3 sm:p-4 rounded-full backdrop-blur-xl border transition-all duration-500 hover:scale-110 active:scale-95 ${
           isDark
             ? 'bg-white/5 border-white/10 text-white/70 hover:text-white'
-            : 'bg-black/5 border-black/5 text-black/70 shadow-sm'
+            : 'bg-white/80 border-black/5 text-black/50 hover:text-black shadow-sm' // Light mode bell
         }`}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,36 +90,67 @@ export default function NotificationBell({ isDark, secrets, onNotificationClick 
       </button>
 
       {showModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-black/85 backdrop-blur-md">
+        <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-6 backdrop-blur-md transition-colors duration-500 ${
+          isDark ? 'bg-black/85' : 'bg-white/60' // Airy background for light mode
+        }`}>
           <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-          <div className={`relative max-w-lg w-full max-h-[80vh] overflow-hidden rounded-[2.5rem] border shadow-2xl ${
-            isDark ? 'bg-zinc-950 border-white/5' : 'bg-white border-black/5'
+          
+          <div className={`relative max-w-lg w-full max-h-[80vh] overflow-hidden rounded-[2.5rem] border shadow-2xl transition-all ${
+            isDark 
+              ? 'bg-zinc-950 border-white/5 shadow-black' 
+              : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50' // Cleaner shadow for light mode
           }`}>
+            
             <div className="p-10 pb-6 flex items-start justify-between">
               <div>
-                <h2 className="text-[10px] uppercase tracking-[0.6em] opacity-40 mb-3 font-bold">Shared Silence</h2>
-                <p className={`text-2xl font-serif italic ${isDark ? 'text-white' : 'text-black'}`}>Someone whispered back.</p>
+                <h2 className={`text-[10px] uppercase tracking-[0.6em] mb-3 font-bold opacity-40 ${isDark ? 'text-white' : 'text-black'}`}>Shared Silence</h2>
+                <p className={`text-2xl font-serif italic ${isDark ? 'text-white' : 'text-gray-900'}`}>Someone whispered back.</p>
               </div>
-              <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-white text-3xl font-light">×</button>
+              <button onClick={() => setShowModal(false)} className={`text-3xl font-light transition-colors ${isDark ? 'text-zinc-500 hover:text-white' : 'text-gray-300 hover:text-gray-900'}`}>×</button>
             </div>
-            <div className="overflow-y-auto max-h-[55vh] p-10 pt-4 space-y-16">
+
+            <div className="overflow-y-auto max-h-[55vh] p-10 pt-4 space-y-16 custom-scrollbar">
               {allNotifications.length === 0 ? (
-                <p className="text-center opacity-40 py-10">No echoes yet...</p>
+                <p className={`text-center py-10 opacity-40 ${isDark ? 'text-white' : 'text-black'}`}>No echoes yet...</p>
               ) : (
                 allNotifications.map((update) => (
                   <div key={update.secretId} className="relative group">
-                    <div className={`absolute -left-6 top-0 bottom-0 w-px bg-gradient-to-b ${update.isUnread ? 'from-orange-500/80' : 'from-zinc-800'} via-transparent to-transparent`} />
+                    {/* Visual Line Anchor */}
+                    <div className={`absolute -left-6 top-0 bottom-0 w-px bg-gradient-to-b ${
+                      update.isUnread 
+                        ? 'from-orange-500' 
+                        : (isDark ? 'from-zinc-800' : 'from-gray-200')
+                    } via-transparent to-transparent`} />
+                    
                     <div className="space-y-4">
-                      <p className={`text-[9px] uppercase tracking-[0.4em] font-black ${update.isUnread ? 'text-orange-500' : 'text-zinc-600'}`}>
+                      <p className={`text-[9px] uppercase tracking-[0.4em] font-black ${
+                        update.isUnread ? 'text-orange-500' : (isDark ? 'text-zinc-600' : 'text-gray-400')
+                      }`}>
                         {update.isUnread ? "New Echo" : "Past Connection"}
                       </p>
-                      <p className={`text-sm italic font-serif leading-relaxed opacity-50 ${isDark ? 'text-white' : 'text-black'}`}>"{update.secretText}"</p>
+                      
+                      <p className={`text-sm italic font-serif leading-relaxed ${
+                        isDark ? 'text-white/50' : 'text-black/40'
+                      }`}>"{update.secretText}"</p>
+                      
                       <div className="space-y-6 pt-2">
                         {(update.isUnread ? update.newRepliesList : update.allReplies).map((reply, idx) => (
-                          <p key={idx} className={`text-[15px] font-light leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>— {reply.text}</p>
+                          <p key={idx} className={`text-[15px] font-light leading-relaxed ${
+                            isDark ? 'text-zinc-300' : 'text-gray-800' // Darker text for light mode readability
+                          }`}>— {reply.text}</p>
                         ))}
                       </div>
-                      <button onClick={() => viewSecret(update)} className={`mt-4 text-[9px] uppercase tracking-[0.4em] transition-all ${isDark ? 'text-white/20 hover:text-orange-400' : 'text-black/30 hover:text-orange-600'}`}>Locate heartbeat →</button>
+                      
+                      <button 
+                        onClick={() => viewSecret(update)} 
+                        className={`mt-4 text-[9px] uppercase tracking-[0.4em] transition-all font-bold ${
+                          isDark 
+                            ? 'text-white/20 hover:text-orange-400' 
+                            : 'text-black/20 hover:text-orange-600'
+                        }`}
+                      >
+                        Locate heartbeat →
+                      </button>
                     </div>
                   </div>
                 ))

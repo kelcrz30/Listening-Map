@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
 import { checkText } from "./utils/wordFilter";
+import { Turnstile } from '@marsidev/react-turnstile';
 // Components
 import Atmosphere from "./components/Atmosphere";
 import Constellations from "./components/Constellations";
@@ -28,7 +29,8 @@ import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
 import DonationModal from "./components/DonationModal";
 import NotificationBell from "./components/NotificationBell";
-
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 export default function App() {
   return (
@@ -126,24 +128,28 @@ function AppContent() {
     setTimeout(() => setIsNodding(false), 800);
   };
 
-const handlePost = async (inputText) => {
+const handlePost = async (inputText, captchaToken) => {
   if (!inputText.trim()) return;
 
-  // 1. Run the filter check first
-  const result = checkText(inputText);
-
-if (result.isProfane) {
-    setNotification(`Silence must be kind. Found ${result.count} forbidden word(s).`);
-    setTimeout(() => setNotification(null), 4000);
-    return; // This stops the post from going to Supabase
+  // Security Check
+  if (!captchaToken) {
+    setNotification("Please verify the captcha first.");
+    return;
   }
 
-  // 2. Your existing location logic continues here...
+  const result = checkText(inputText);
+  if (result.isProfane) {
+    setNotification(`Silence must be kind. Found ${result.count} forbidden word(s).`);
+    setTimeout(() => setNotification(null), 4000);
+    return;
+  }
+
   if (useCurrentLocation) {
     setNotification("Accessing GPS...");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        await postToDatabase(inputText, pos.coords.latitude, pos.coords.longitude);
+        // Gagamit na tayo ng postToEdgeFunction sa halip na postToDatabase
+        await postToEdgeFunction(inputText, pos.coords.latitude, pos.coords.longitude, captchaToken);
       },
       (geoError) => {
         alert("Location Error: Please allow location access to post.");
@@ -158,12 +164,42 @@ if (result.isProfane) {
       setTimeout(() => setNotification(null), 3000);
       return;
     }
-    await postToDatabase(inputText, selectedLocation.lat, selectedLocation.lng);
+    // Gagamit na tayo ng postToEdgeFunction
+    await postToEdgeFunction(inputText, selectedLocation.lat, selectedLocation.lng, captchaToken);
     setSelectedLocation(null);
     setIsPlacementMode(false);
   }
 };
+const postToEdgeFunction = async (text, lat, lng, token) => {
+  setNotification("Verifying and sharing...");
+  
+  // Tinatawag ang Supabase Edge Function ('post-word')
+  const { data, error } = await supabase.functions.invoke('post-word', {
+    body: { 
+      word: text, 
+      lat: lat, 
+      lng: lng, 
+      captchaToken: token 
+    },
+  });
 
+  if (error) {
+    console.error("Post Error:", error);
+    setNotification("Post failed: Verification error.");
+    return;
+  }
+
+  // Success logic
+  // Dahil may Realtime subscription ka na sa AppContent, 
+  // kusa nang lalabas yung bagong marker sa map mo.
+  setNotification("Message sent.");
+  
+  // Opsyonal: I-save ang ID sa local storage para pwede mong i-delete later
+  if (data && data.id) {
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, data.id]));
+  }
+};
   const markAsVisited = (id) => {
     if (!visited.includes(id)) {
       const updated = [...visited, id];
@@ -246,17 +282,14 @@ if (result.isProfane) {
 const handleAddWhisper = async (id, whisperText) => {
   if (!whisperText.trim()) return;
 
-  // 1. Run the profanity filter check first
   const result = checkText(whisperText);
-
   if (result.isProfane) {
-    // Block the whisper and notify the user
     setNotification(`Whispers must be gentle. Found ${result.count} forbidden word(s).`);
     setTimeout(() => setNotification(null), 4000);
-    return; // Stop the function here
+    return;
   }
 
-  // 2. Proceed with database logic if clean
+  // 1. Kunin ang latest replies galing sa DB bago mag-update
   const { data: currentSecret, error: fetchError } = await supabase
     .from('unspoken_words')
     .select('replies')
@@ -264,31 +297,40 @@ const handleAddWhisper = async (id, whisperText) => {
     .single();
 
   if (fetchError) {
-    setNotification("Could not send whisper...");
-    setTimeout(() => setNotification(null), 3000);
+    console.error("Fetch Error:", fetchError);
+    setNotification("Could not find the secret...");
     return;
   }
 
-  const updatedReplies = [
-    ...(currentSecret?.replies || []), 
-    { text: whisperText, created_at: new Date().toISOString() }
-  ];
+  // 2. I-prepare ang bagong array
+  const newReply = { 
+    text: whisperText, 
+    created_at: new Date().toISOString() 
+  };
+  
+  const updatedReplies = [...(currentSecret?.replies || []), newReply];
 
-  const { error } = await supabase
+  // 3. I-update ang Database
+  const { error: updateError } = await supabase
     .from('unspoken_words')
     .update({ replies: updatedReplies }) 
     .eq('id', id);
 
-  if (!error) {
-    setSecrets(prev => prev.map(s => 
-      s.id === id ? { ...s, replies: updatedReplies } : s
-    ));
-    setNotification("Whisper sent.");
+  if (updateError) {
+    // KUNG MAG-ERROR DITO, POSIBLENG RLS ISSUE
+    console.error("Supabase Update Error:", updateError);
+    setNotification("The whisper was lost in the wind (Database Error).");
     setTimeout(() => setNotification(null), 3000);
-  } else {
-    setNotification("The whisper was lost...");
-    setTimeout(() => setNotification(null), 3000);
+    return;
   }
+
+  // 4. Update local state ONLY if the DB update was successful
+  setSecrets(prev => prev.map(s => 
+    s.id === id ? { ...s, replies: updatedReplies } : s
+  ));
+  
+  setNotification("Whisper sent.");
+  setTimeout(() => setNotification(null), 3000);
 };
 
   const handleDonateClick = () => {

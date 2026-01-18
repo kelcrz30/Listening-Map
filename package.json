@@ -12,6 +12,7 @@
   "dependencies": {
     "@changey/react-leaflet-markercluster": "^4.0.0-rc1",
     "@emailjs/browser": "^4.4.1",
+    "@marsidev/react-turnstile": "^1.4.1",
     "@supabase/supabase-js": "^2.90.1",
     "@vercel/analytics": "^1.6.1",
     "bad-words": "^4.0.0",
