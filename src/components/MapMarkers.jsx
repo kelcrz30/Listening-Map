@@ -32,24 +32,28 @@ export default function MapMarkers({
   // show individual markers at >= this zoom
   const CLUSTER_OFF_ZOOM = 12;
 
-  // Optimized viewport tracking (bounds + zoom)
-  useEffect(() => {
+useEffect(() => {
+    let frameId;
+    
     const updateViewport = () => {
-      requestAnimationFrame(() => {
+      // requestAnimationFrame makes the update sync with the phone's screen refresh
+      frameId = requestAnimationFrame(() => {
         setBounds(map.getBounds());
         setZoomLevel(map.getZoom());
-      });
+      }); // Added missing closing brace/paren here
     };
 
-    map.on("moveend", updateViewport);
-    map.on("zoomend", updateViewport);
+    // Use "move" instead of "moveend" to keep the UI attached to your finger
+    map.on("move", updateViewport); 
+    map.on("zoom", updateViewport);
 
-    // init once
+    // Initial run
     updateViewport();
 
     return () => {
-      map.off("moveend", updateViewport);
-      map.off("zoomend", updateViewport);
+      map.off("move", updateViewport);
+      map.off("zoom", updateViewport);
+      if (frameId) cancelAnimationFrame(frameId);
     };
   }, [map]);
 
@@ -358,12 +362,15 @@ export default function MapMarkers({
               },
             }}
           >
-            <Popup
-              maxWidth={window.innerWidth < 768 ? 260 : 350}
-              onClose={() => setWhisperInput("")}
-              autoPan={true}
-              closeButton={false}
-            >
+ <Popup
+  maxWidth={window.innerWidth < 768 ? 280 : 350}
+  // Remove the strict maxHeight or set it higher so the Leaflet scrollbar doesn't trigger
+  maxHeight={700} 
+  onClose={() => setWhisperInput("")}
+  autoPan={true}
+  keepInView={true}
+  closeButton={false}
+>
               <div
                 className={`relative py-4 px-1 text-center ${
                   isDark ? "text-white" : "text-gray-900"
@@ -431,7 +438,7 @@ export default function MapMarkers({
                 </span>
 
                 <div
-                  className={`min-h-[60px] max-h-[180px] overflow-y-auto overflow-x-hidden mb-4 px-4 custom-scrollbar touch-pan-y`}
+                  className={`min-h-[60px] max-h-[160px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar touch-pan-y`}
                   onWheel={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
@@ -449,7 +456,7 @@ export default function MapMarkers({
                 <div className="mb-4 px-2">
                   <div
                     ref={scrollRef}
-                    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-3 p-3 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
+                    className={`max-h-35 md:max-h-28 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
                       isDark
                         ? "bg-white/5 border-white/10"
                         : "bg-gray-50 border-gray-100"
@@ -562,7 +569,7 @@ export default function MapMarkers({
                       <div
                         className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
                           hasEchoed
-                            ? "bg-green-600 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
+                            ? "bg-purple-400 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
                             : isDark
                             ? "bg-zinc-600"
                             : "bg-gray-400"

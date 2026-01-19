@@ -10,15 +10,15 @@ export default function DonationModal({ isOpen, onClose, isDark }) {
       }`}>
         
         {/* Poetic Header */}
-        <h2 className="text-[10px] font-light uppercase tracking-[0.5em] mb-6 opacity-60">
-          Support the Silence
-        </h2>
-        
-        <p className={`text-sm md:text-base mb-10 leading-relaxed font-serif italic ${
-          isDark ? 'text-zinc-400' : 'text-zinc-600'
-        }`}>
-          "Every peso helps keep these whispers drifting through the digital wind."
-        </p>
+<h2 className="text-[10px] font-light uppercase tracking-[0.5em] mb-6 opacity-60">
+  Keep the whispers alive
+</h2>
+
+<p className={`text-sm md:text-base mb-10 leading-relaxed font-serif italic ${
+  isDark ? 'text-zinc-400' : 'text-zinc-600'
+}`}>
+  "Your kindness helps us secure a permanent home for these voices—supporting our domain and the database that holds every silent word."
+</p>
 
         {/* GCash QR Section */}
         <div className="relative group mb-8">
