@@ -20,30 +20,29 @@ export default function MapMarkers({
 
   const map = useMap();
   const scrollRef = useRef(null);
+  const popupRef = useRef(null);
 
-  // NEW: track bounds in state (optimized)
+  // Track bounds in state (optimized)
   const [bounds, setBounds] = useState(() => map.getBounds());
 
-  // NEW: cluster icon cache (so we don't recreate icons every render)
+  // Cluster icon cache
   const clusterIconCache = useRef(new Map());
 
   const getActiveIndex = (markerId) => threadIndices[markerId] || 0;
 
-  // show individual markers at >= this zoom
+  // Show individual markers at >= this zoom
   const CLUSTER_OFF_ZOOM = 12;
 
-useEffect(() => {
+  useEffect(() => {
     let frameId;
     
     const updateViewport = () => {
-      // requestAnimationFrame makes the update sync with the phone's screen refresh
       frameId = requestAnimationFrame(() => {
         setBounds(map.getBounds());
         setZoomLevel(map.getZoom());
-      }); // Added missing closing brace/paren here
+      });
     };
 
-    // Use "move" instead of "moveend" to keep the UI attached to your finger
     map.on("move", updateViewport); 
     map.on("zoom", updateViewport);
 
@@ -79,7 +78,7 @@ useEffect(() => {
     return distance <= thresholdKm;
   };
 
-  // NEW: cached cluster icon builder with improved animation
+  // Cached cluster icon builder with improved animation
   const getClusterIcon = (count, clusterType = 'default') => {
     const size = count > 50 ? 60 : count > 10 ? 50 : 40;
     const key = `${count}-${size}-${isDark ? "dark" : "light"}-${clusterType}`;
@@ -88,7 +87,7 @@ useEffect(() => {
       return clusterIconCache.current.get(key);
     }
     
-    // Color scheme based on cluster type (orange = listening, purple = echoed, green = default)
+    // Color scheme based on cluster type
     const colors = clusterType === 'listening' ? {
       ripple1: isDark ? "rgba(249, 115, 22, 0.15)" : "rgba(249, 115, 22, 0.1)",
       ripple2: isDark ? "rgba(249, 115, 22, 0.2)" : "rgba(249, 115, 22, 0.15)",
@@ -214,7 +213,7 @@ useEffect(() => {
     return icon;
   };
 
-  // NEW: Optimized clustering (viewport filtered + grid clustering)
+  // Optimized clustering (viewport filtered + grid clustering)
   const clusteredMarkers = useMemo(() => {
     if (!bounds || !secrets?.length) return [];
 
@@ -258,7 +257,7 @@ useEffect(() => {
       let c = clusters.get(key);
       if (!c) {
         c = {
-          position: [0, 0], // Will be calculated later
+          position: [0, 0],
           secrets: [],
           isCluster: true,
         };
@@ -267,7 +266,7 @@ useEffect(() => {
       c.secrets.push(s);
     }
 
-    // Calculate centroid (average position) for each cluster
+    // Calculate centroid for each cluster
     const clusterArray = Array.from(clusters.values());
     clusterArray.forEach(cluster => {
       const avgLat = cluster.secrets.reduce((sum, s) => sum + s.lat, 0) / cluster.secrets.length;
@@ -287,11 +286,10 @@ useEffect(() => {
   return (
     <>
       {clusteredMarkers.map((cluster, idx) => {
-        // ✅ CLUSTER MARKER - Click to zoom in to that location
+        // CLUSTER MARKER
         if (cluster.isCluster) {
           const count = cluster.secrets.length;
           
-          // Determine cluster type: listening > echoed > default
           const hasListening = cluster.secrets.some(s => s.is_listening);
           
           const echoedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
@@ -306,7 +304,6 @@ useEffect(() => {
               icon={getClusterIcon(count, clusterType)}
               eventHandlers={{
                 click: () => {
-                  // Zoom into the cluster location
                   const targetZoom = Math.min(zoomLevel + 3, CLUSTER_OFF_ZOOM);
                   map.setView(cluster.position, targetZoom, {
                     animate: true,
@@ -318,7 +315,7 @@ useEffect(() => {
           );
         }
 
-        // ✅ INDIVIDUAL MARKER (your existing logic)
+        // INDIVIDUAL MARKER
         const s = cluster.secrets[0];
         const secretsAtLocation = secrets
           .filter((other) =>
@@ -362,15 +359,18 @@ useEffect(() => {
               },
             }}
           >
- <Popup
-  maxWidth={window.innerWidth < 768 ? 280 : 350}
-  // Remove the strict maxHeight or set it higher so the Leaflet scrollbar doesn't trigger
-  maxHeight={700} 
-  onClose={() => setWhisperInput("")}
-  autoPan={true}
-  keepInView={true}
-  closeButton={false}
->
+            <Popup
+              ref={popupRef}
+              maxWidth={window.innerWidth < 768 ? 280 : 350}
+              minWidth={window.innerWidth < 768 ? 280 : 350}
+              maxHeight={window.innerHeight * 0.8}
+              onClose={() => setWhisperInput("")}
+              autoPan={true}
+              keepInView={true}
+              closeButton={false}
+              closeOnClick={false}
+              autoClose={false}
+            >
               <div
                 className={`relative py-4 px-1 text-center ${
                   isDark ? "text-white" : "text-gray-900"
@@ -438,11 +438,24 @@ useEffect(() => {
                 </span>
 
                 <div
-                  className={`min-h-[60px] max-h-[160px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar touch-pan-y`}
-                  onWheel={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onTouchMove={(e) => e.stopPropagation()}
+                  className={`min-h-[60px] max-h-[160px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar`}
+                  style={{ 
+                    touchAction: 'pan-y',
+                    overscrollBehavior: 'contain'
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    map.dragging.disable();
+                    map.touchZoom.disable();
+                    map.doubleClickZoom.disable();
+                    map.scrollWheelZoom.disable();
+                  }}
+                  onTouchEnd={() => {
+                    map.dragging.enable();
+                    map.touchZoom.enable();
+                    map.doubleClickZoom.enable();
+                    map.scrollWheelZoom.enable();
+                  }}
                 >
                   <p
                     className={`text-md md:text-lg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
@@ -456,11 +469,28 @@ useEffect(() => {
                 <div className="mb-4 px-2">
                   <div
                     ref={scrollRef}
-                    className={`max-h-35 md:max-h-28 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
+                    className={`max-h-35 md:max-h-28 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
                       isDark
                         ? "bg-white/5 border-white/10"
                         : "bg-gray-50 border-gray-100"
                     }`}
+                    style={{ 
+                      touchAction: 'pan-y',
+                      overscrollBehavior: 'contain'
+                    }}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      map.dragging.disable();
+                      map.touchZoom.disable();
+                      map.doubleClickZoom.disable();
+                      map.scrollWheelZoom.disable();
+                    }}
+                    onTouchEnd={() => {
+                      map.dragging.enable();
+                      map.touchZoom.enable();
+                      map.doubleClickZoom.enable();
+                      map.scrollWheelZoom.enable();
+                    }}
                     onMouseEnter={() => {
                       map.dragging.disable();
                       map.scrollWheelZoom.disable();
@@ -469,10 +499,6 @@ useEffect(() => {
                       map.dragging.enable();
                       map.scrollWheelZoom.enable();
                     }}
-                    onWheel={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    onTouchMove={(e) => e.stopPropagation()}
                   >
                     <p className="text-[8px] uppercase tracking-widest opacity-40 top-0 bg-inherit z-10 py-1">
                       Whisper Thread
@@ -537,6 +563,7 @@ useEffect(() => {
                       }`}
                       value={whisperInput}
                       onChange={(e) => setWhisperInput(e.target.value)}
+                      onTouchStart={(e) => e.stopPropagation()}
                     />
                     <button
                       onClick={() => {
@@ -593,7 +620,9 @@ useEffect(() => {
                     </span>
                   </div>
 
+                  {/* Force re-render by using key */}
                   <ListeningButton
+                    key={`listening-${currentSecret.id}-${currentSecret.is_listening}`}
                     id={currentSecret.id}
                     isListening={currentSecret.is_listening}
                   />
