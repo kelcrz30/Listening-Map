@@ -13,14 +13,18 @@ export default function MapMarkers({
   onNod,
   onWhisper,
   onDelete,
+  activeSecretId, 
+  setActiveSecretId,
 }) {
   const [whisperInput, setWhisperInput] = useState("");
   const [threadIndices, setThreadIndices] = useState({});
   const [zoomLevel, setZoomLevel] = useState(4);
+  const [activePopupId, setActivePopupId] = useState(null);
 
   const map = useMap();
   const scrollRef = useRef(null);
   const popupRef = useRef(null);
+  const touchStartRef = useRef(null);
 
   // Track bounds in state (optimized)
   const [bounds, setBounds] = useState(() => map.getBounds());
@@ -32,6 +36,43 @@ export default function MapMarkers({
 
   // Show individual markers at >= this zoom
   const CLUSTER_OFF_ZOOM = 12;
+
+const markerRefs = useRef({});
+
+useEffect(() => {
+  if (activeSecretId) {
+    // 1. Find the secret data first (since the marker might not be rendered yet)
+    const secretData = secrets.find(s => s.id === activeSecretId);
+    if (!secretData) return;
+
+    const targetLatLng = [secretData.lat, secretData.lng];
+
+    // 2. Fly to the spot and zoom in past the CLUSTER_OFF_ZOOM threshold
+    // We use a zoom level like 15 or 16 to ensure clusters are broken
+    map.flyTo(targetLatLng, 15, {
+      duration: 1.5,
+      easeLinearity: 0.25
+    });
+
+    // 3. Listen for when the move ends to ensure the marker is now rendered
+    const onMoveEnd = () => {
+      const marker = markerRefs.current[activeSecretId];
+      if (marker) {
+        // A tiny delay ensures the marker ref is fully populated after the zoom-render
+        setTimeout(() => {
+          marker.openPopup();
+          onMarkAsVisited(activeSecretId); // Logically visited now
+        }, 100);
+      }
+      setActiveSecretId(null);
+      map.off("moveend", onMoveEnd); // Clean up listener
+    };
+
+    map.on("moveend", onMoveEnd);
+
+    return () => map.off("moveend", onMoveEnd);
+  }
+}, [activeSecretId, map, secrets, setActiveSecretId, onMarkAsVisited]);
 
   useEffect(() => {
     let frameId;
@@ -346,6 +387,9 @@ export default function MapMarkers({
           <Marker
             key={s.id}
             position={[s.lat, s.lng]}
+            ref={(el) => {
+            if (el) markerRefs.current[s.id] = el;
+          }}
             icon={getMemoryIcon(
               currentSecret.is_listening,
               isVisited,
@@ -356,27 +400,30 @@ export default function MapMarkers({
               click: () => {
                 onMarkAsVisited(currentSecret.id);
                 setThreadIndices((prev) => ({ ...prev, [s.id]: 0 }));
+                setActivePopupId(currentSecret.id);
               },
             }}
           >
             <Popup
               ref={popupRef}
-              maxWidth={window.innerWidth < 768 ? 280 : 350}
-              minWidth={window.innerWidth < 768 ? 280 : 350}
-              maxHeight={window.innerHeight * 0.8}
-              onClose={() => setWhisperInput("")}
-              autoPan={true}
-              keepInView={true}
+              maxWidth={240}
+              minWidth={240}
+              maxHeight={500}
+              onClose={() => {
+                setWhisperInput("");
+                setActivePopupId(null);
+              }}
+              autoPan={false}
+              keepInView={false}
               closeButton={false}
-              closeOnClick={false}
+              closeOnClick={true}
               autoClose={false}
+              className="interactive-popup"
             >
               <div
                 className={`relative py-4 px-1 text-center ${
                   isDark ? "text-white" : "text-gray-900"
                 }`}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
               >
                 <button
                   onClick={() => map.closePopup()}
@@ -438,23 +485,10 @@ export default function MapMarkers({
                 </span>
 
                 <div
-                  className={`min-h-[60px] max-h-[160px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar`}
+                  className={`min-h-[60px] max-h-[120px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar`}
                   style={{ 
-                    touchAction: 'pan-y',
-                    overscrollBehavior: 'contain'
-                  }}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    map.dragging.disable();
-                    map.touchZoom.disable();
-                    map.doubleClickZoom.disable();
-                    map.scrollWheelZoom.disable();
-                  }}
-                  onTouchEnd={() => {
-                    map.dragging.enable();
-                    map.touchZoom.enable();
-                    map.doubleClickZoom.enable();
-                    map.scrollWheelZoom.enable();
+                    overscrollBehavior: 'contain',
+                    WebkitOverflowScrolling: 'touch'
                   }}
                 >
                   <p
@@ -469,38 +503,17 @@ export default function MapMarkers({
                 <div className="mb-4 px-2">
                   <div
                     ref={scrollRef}
-                    className={`max-h-35 md:max-h-28 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
+                    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
                       isDark
                         ? "bg-white/5 border-white/10"
                         : "bg-gray-50 border-gray-100"
                     }`}
                     style={{ 
-                      touchAction: 'pan-y',
-                      overscrollBehavior: 'contain'
-                    }}
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                      map.dragging.disable();
-                      map.touchZoom.disable();
-                      map.doubleClickZoom.disable();
-                      map.scrollWheelZoom.disable();
-                    }}
-                    onTouchEnd={() => {
-                      map.dragging.enable();
-                      map.touchZoom.enable();
-                      map.doubleClickZoom.enable();
-                      map.scrollWheelZoom.enable();
-                    }}
-                    onMouseEnter={() => {
-                      map.dragging.disable();
-                      map.scrollWheelZoom.disable();
-                    }}
-                    onMouseLeave={() => {
-                      map.dragging.enable();
-                      map.scrollWheelZoom.enable();
+                      overscrollBehavior: 'contain',
+                      WebkitOverflowScrolling: 'touch'
                     }}
                   >
-                    <p className="text-[8px] uppercase tracking-widest opacity-40 top-0 bg-inherit z-10 py-1">
+                    <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
                       Whisper Thread
                     </p>
 
@@ -546,7 +559,7 @@ export default function MapMarkers({
                     {!currentSecret.whispers &&
                       (!currentSecret.replies ||
                         currentSecret.replies.length === 0) && (
-                        <p className="text-[10px] italic opacity-30 text-center py-2">
+                        <p className="text-[10px] italic opacity-30 text-center">
                           No whispers yet... be the first
                         </p>
                       )}
@@ -556,7 +569,7 @@ export default function MapMarkers({
                     <input
                       type="text"
                       placeholder="Whisper a reply..."
-                      className={`flex-1 border rounded-lg px-3 py-2 text-[10px] outline-none ${
+                      className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
                         isDark
                           ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
                           : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
@@ -584,17 +597,17 @@ export default function MapMarkers({
                 </div>
 
                 <div
-                  className={`flex flex-col gap-4 items-center border-t pt-4 ${
+                  className={`flex flex-col  items-center border-t pt-4 ${
                     isDark ? "border-white/5" : "border-gray-200"
                   }`}
                 >
-                  <div className="flex justify-between items-center w-full px-4">
+                  <div className="flex justify-between items-center w-full px-4 mb-2">
                     <button
                       className="flex items-center"
                       onClick={() => onNod(currentSecret.id, currentSecret.nods)}
                     >
                       <div
-                        className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
+                        className={`w-3 h-3 rounded-full mr-2 transition-all  duration-500 ${
                           hasEchoed
                             ? "bg-purple-400 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
                             : isDark

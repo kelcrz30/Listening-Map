@@ -16,7 +16,7 @@ export default function Atmosphere({ isNodding }) {
 />
 
       {/* Global Vignette */}
-      <div className="fixed inset-0 pointer-events-none z-[501] shadow-[inset_0_0_200px_rgba(0,0,0,1)]" />
+      
     </>
   );
 }

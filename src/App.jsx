@@ -57,6 +57,7 @@ function AppContent() {
   const [useCurrentLocation, setUseCurrentLocation] = useState(true);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [activeSecretId, setActiveSecretId] = useState(null);
   // NEW: State for real-time presence
   const [onlineCount, setOnlineCount] = useState(1);
 
@@ -89,27 +90,35 @@ function AppContent() {
         const count = Object.keys(newState).length;
         setOnlineCount(count); 
       })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'unspoken_words'
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setSecrets((prev) => [payload.new, ...prev]);
-          setNotification("A new heart has shared a secret...");
-          setTimeout(() => setNotification(null), 4000);
-        }
+// Inside AppContent useEffect
+.on('postgres_changes', {
+  event: '*',
+  schema: 'public',
+  table: 'unspoken_words'
+}, (payload) => {
+  if (payload.eventType === 'INSERT') {
+    setSecrets((prev) => [payload.new, ...prev]);
+    setNotification("A new heart has shared a secret...");
+    setTimeout(() => setNotification(null), 4000);
+  }
+  
+  if (payload.eventType === 'UPDATE') {
+    setSecrets((prev) => prev.map(s => {
+      if (s.id === payload.new.id) {
+        // Trigger pulse if nods increased
+        if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
         
-        if (payload.eventType === 'UPDATE') {
-          setSecrets((prev) => prev.map(s => {
-            if (s.id === payload.new.id) {
-              if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
-              return payload.new;
-            }
-            return s;
-          }));
-        }
-      })
+        // CHECK FOR NEW WHISPERS: 
+        // If the reply count increased, the bell needs to see the new data
+        return payload.new; 
+      }
+      return s;
+    }));
+    
+    // FORCING A RE-CHECK: Optional but ensures the Bell logic runs
+    // window.dispatchEvent(new Event('check_notifications'));
+  }
+})
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           // Track the unique session
@@ -292,7 +301,7 @@ const handleAddWhisper = async (id, whisperText) => {
     return;
   }
 
-  // 1. Kunin ang latest replies galing sa DB bago mag-update
+  // 1. Get the latest replies from DB before updating
   const { data: currentSecret, error: fetchError } = await supabase
     .from('unspoken_words')
     .select('replies')
@@ -305,7 +314,7 @@ const handleAddWhisper = async (id, whisperText) => {
     return;
   }
 
-  // 2. I-prepare ang bagong array
+  // 2. Prepare the new array
   const newReply = { 
     text: whisperText, 
     created_at: new Date().toISOString() 
@@ -313,19 +322,26 @@ const handleAddWhisper = async (id, whisperText) => {
   
   const updatedReplies = [...(currentSecret?.replies || []), newReply];
 
-  // 3. I-update ang Database
+  // 3. Update the Database
   const { error: updateError } = await supabase
     .from('unspoken_words')
     .update({ replies: updatedReplies }) 
     .eq('id', id);
 
   if (updateError) {
-    // KUNG MAG-ERROR DITO, POSIBLENG RLS ISSUE
     console.error("Supabase Update Error:", updateError);
     setNotification("The whisper was lost in the wind (Database Error).");
     setTimeout(() => setNotification(null), 3000);
     return;
   }
+
+  // --- START NEW NOTIFICATION LOGIC ---
+  // Save this secret ID to 'commented_secrets' so the bell watches it even if it's not yours
+  const commentedSecrets = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+  if (!commentedSecrets.includes(id)) {
+    localStorage.setItem("commented_secrets", JSON.stringify([...commentedSecrets, id]));
+  }
+  // --- END NEW NOTIFICATION LOGIC ---
 
   // 4. Update local state ONLY if the DB update was successful
   setSecrets(prev => prev.map(s => 
@@ -335,7 +351,6 @@ const handleAddWhisper = async (id, whisperText) => {
   setNotification("Whisper sent.");
   setTimeout(() => setNotification(null), 3000);
 };
-
   const handleDonateClick = () => {
     setShowDonationModal(true);
   };
@@ -410,14 +425,16 @@ const handleAddWhisper = async (id, whisperText) => {
 
 {/* Floating UI Controls - TOP RIGHT */}
 <div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001] pointer-events-auto">
-  <NotificationBell 
-    isDark={isDark}
-    secrets={secrets}
-    onNotificationClick={(lat, lng, id) => {
-      setTargetPos([lat, lng]);
-      markAsVisited(id);
-    }}
-  />
+<NotificationBell 
+  isDark={isDark}
+  secrets={secrets}
+  onNotificationClick={(lat, lng, id) => {
+    // Follow the same pattern as the sidebar
+    setTargetPos([lat, lng]);
+    setActiveSecretId(id); 
+    markAsVisited(id);
+  }}
+/>
   <ThemeToggle />
   <MenuButton 
     isOpen={showSidebar} 
@@ -427,13 +444,20 @@ const handleAddWhisper = async (id, whisperText) => {
 </div>
 
 {/* Sidebar also needs high Z-index */}
+{/* Sidebar needs to trigger the Active ID */}
 <Sidebar
   isOpen={showSidebar}
   secrets={secrets}
   visited={visited}
   isDark={isDark}
   onSecretClick={(lat, lng, id) => {
-    setTargetPos([lat, lng]);
+    // 1. Update the target position for the MapController (if still using it)
+    setTargetPos([lat, lng]); 
+    
+    // 2. TRIGGER THE REVEAL: This is the key
+    setActiveSecretId(id); 
+    
+    // 3. UI logic
     setShowSidebar(false);
     markAsVisited(id);
   }}
@@ -485,6 +509,8 @@ const handleAddWhisper = async (id, whisperText) => {
           secrets={secrets}
           visited={visited}
           isDark={isDark}
+          activeSecretId={activeSecretId}       // <--- Pass it in
+  setActiveSecretId={setActiveSecretId}
           onMarkAsVisited={markAsVisited} 
           onNod={handleNod}
           onWhisper={handleAddWhisper}
