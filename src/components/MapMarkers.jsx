@@ -361,11 +361,15 @@ export default function MapMarkers({
             <Popup
               maxWidth={window.innerWidth < 768 ? 260 : 350}
               onClose={() => setWhisperInput("")}
+              autoPan={true}
+              closeButton={false}
             >
               <div
                 className={`relative py-4 px-1 text-center ${
                   isDark ? "text-white" : "text-gray-900"
                 }`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
               >
                 <button
                   onClick={() => map.closePopup()}
@@ -427,11 +431,14 @@ export default function MapMarkers({
                 </span>
 
                 <div
-                  className={`min-h-[60px] max-h-[180px] overflow-y-auto overflow-x-hidden mb-3 px-4 custom-scrollbar touch-pan-y`}
+                  className={`min-h-[60px] max-h-[180px] overflow-y-auto overflow-x-hidden mb-4 px-4 custom-scrollbar touch-pan-y`}
                   onWheel={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
                 >
                   <p
-                    className={`text-lg lg:text-2xl font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
+                    className={`text-md md:text-lg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
                       isDark ? "text-white" : "text-black"
                     }`}
                   >
@@ -442,19 +449,23 @@ export default function MapMarkers({
                 <div className="mb-4 px-2">
                   <div
                     ref={scrollRef}
-                    className={`max-h-24 md:max-h-40 overflow-y-auto overflow-x-hidden mb-4 p-3 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
+                    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-3 p-3 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
                       isDark
                         ? "bg-white/5 border-white/10"
                         : "bg-gray-50 border-gray-100"
                     }`}
                     onMouseEnter={() => {
                       map.dragging.disable();
+                      map.scrollWheelZoom.disable();
                     }}
                     onMouseLeave={() => {
                       map.dragging.enable();
+                      map.scrollWheelZoom.enable();
                     }}
                     onWheel={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
                   >
                     <p className="text-[8px] uppercase tracking-widest opacity-40 top-0 bg-inherit z-10 py-1">
                       Whisper Thread
@@ -551,7 +562,7 @@ export default function MapMarkers({
                       <div
                         className={`w-3 h-3 rounded-full mr-2 transition-all duration-500 ${
                           hasEchoed
-                            ? "bg-purple-400 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
+                            ? "bg-green-600 shadow-[0_0_10px_rgba(139,92,246,0.5)]"
                             : isDark
                             ? "bg-zinc-600"
                             : "bg-gray-400"
@@ -585,7 +596,7 @@ export default function MapMarkers({
                       onClick={() => onDelete(currentSecret.id)}
                       className={`mt-2 w-full py-2 rounded-lg text-[8px] font-bold uppercase tracking-[0.3em] transition-all opacity-40 hover:opacity-100 flex items-center justify-center gap-2 ${
                         isDark
-                          ? "text-red-400/80 hover:text-red-400"
+                          ? "text-red-400/50 hover:text-red-400"
                           : "text-red-500"
                       }`}
                     >
