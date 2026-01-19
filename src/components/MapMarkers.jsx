@@ -427,11 +427,11 @@ export default function MapMarkers({
                 </span>
 
                 <div
-                  className={`min-h-[60px] max-h-[250px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar touch-pan-y`}
+                  className={`min-h-[60px] max-h-[180px] overflow-y-auto overflow-x-hidden mb-3 px-4 custom-scrollbar touch-pan-y`}
                   onWheel={(e) => e.stopPropagation()}
                 >
                   <p
-                    className={`text-md md:text-lg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
+                    className={`text-lg lg:text-2xl font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
                       isDark ? "text-white" : "text-black"
                     }`}
                   >
@@ -442,7 +442,7 @@ export default function MapMarkers({
                 <div className="mb-4 px-2">
                   <div
                     ref={scrollRef}
-                    className={`max-h-32 md:max-h-40 overflow-y-auto overflow-x-hidden mb-4 p-3 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
+                    className={`max-h-24 md:max-h-40 overflow-y-auto overflow-x-hidden mb-4 p-3 rounded-xl border text-left flex flex-col gap-3 pointer-events-auto custom-scrollbar touch-pan-y ${
                       isDark
                         ? "bg-white/5 border-white/10"
                         : "bg-gray-50 border-gray-100"
@@ -585,7 +585,7 @@ export default function MapMarkers({
                       onClick={() => onDelete(currentSecret.id)}
                       className={`mt-2 w-full py-2 rounded-lg text-[8px] font-bold uppercase tracking-[0.3em] transition-all opacity-40 hover:opacity-100 flex items-center justify-center gap-2 ${
                         isDark
-                          ? "text-red-400/50 hover:text-red-400"
+                          ? "text-red-400/80 hover:text-red-400"
                           : "text-red-500"
                       }`}
                     >
