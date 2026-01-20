@@ -1,12 +1,10 @@
 import L from "leaflet";
 
 /**
- * Priority: 1. Listening (Orange) > 2. Visited (Purple) > 3. New (Green)
- * Anchor is bottom-center to feel stable on mobile.
+ * Memory Icons for Secrets
  */
 export const getMemoryIcon = (isListening, isVisited, weight = 20, isDark = true) => {
   const size = isListening ? 22 : 20;
-
   let color;
   let boxShadow;
   let border = "none";
@@ -18,13 +16,9 @@ export const getMemoryIcon = (isListening, isVisited, weight = 20, isDark = true
     color = "#8b5cf6";
     boxShadow = "none";
   } else {
-    color = "#32CD32"; // New / unheard
-    if (isDark) {
-      boxShadow = "0 0 12px rgba(50, 205, 50, 0.75)";
-    } else {
-      boxShadow = "0 4px 15px rgba(0, 0, 0, 0.35)";
-      border = "1px solid rgba(0, 0, 0, 0.15)";
-    }
+    color = "#32CD32";
+    boxShadow = isDark ? "0 0 12px rgba(50, 205, 50, 0.75)" : "0 4px 15px rgba(0, 0, 0, 0.35)";
+    border = isDark ? "none" : "1px solid rgba(0, 0, 0, 0.15)";
   }
 
   return L.divIcon({
@@ -43,7 +37,34 @@ export const getMemoryIcon = (isListening, isVisited, weight = 20, isDark = true
       "></div>
     `,
     iconSize: [size, size],
-    iconAnchor: [size / 2, size], // ✅ bottom-center anchor (mobile stable)
+    iconAnchor: [size / 2, size],
+  });
+};
+
+/**
+ * Ghost label for background text
+ */
+export const getWorldLabelIcon = (text, isDark) => {
+  return L.divIcon({
+    className: "world-label-icon",
+    html: `
+      <div style="pointer-events: none; user-select: none; white-space: nowrap; display: flex; flex-direction: column; align-items: center;">
+        <h1 style="
+          font-family: serif;
+          font-style: italic;
+          font-size: 42px;
+          letter-spacing: 0.7em;
+          color: ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'};
+          text-transform: uppercase;
+          margin: 0;
+          pointer-events: none;
+        ">
+          ${text}
+        </h1>
+      </div>
+    `,
+    iconSize: [0, 0],
+    iconAnchor: [300, 21],
   });
 };
 

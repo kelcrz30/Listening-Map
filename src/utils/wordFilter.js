@@ -1,11 +1,11 @@
 const FORBIDDEN_WORDS = [
-  'tangina', 'putangina', 'gago', 'bobo', 'tarantado', 'puta', 'hayup', 'pota', 'tanga', "kantutan",
+  'tangina', 'putangina', 'gago', 'bobo', 'tarantado', 'puta', 'hayup', 'pota', 'tanga', "kantutan", "subo",
 
   'pakyu', 'pokpok', 'kupal', 'ulol', 'pakyut', 'shunga', 'lintek', 'punyeta', 'kantot', 'iyot',
-  'hindot', 'pakshet', 'tangengot', 'buwisit', 'leche', 'pisti', 'giatay', 'kayat',
+  'hindot', 'pakshet', 'tangengot', 'buwisit', 'leche', 'pisti', 'giatay', 'kayat', "patayin", "burat",
 
   'bitch', 'nigga', 'nigger', 'fuck', 'shit', 'asshole', 'cunt', 'dick', 'pussy', 
-  'faggot', 'bastard', 'slut', 'whore', 'motherfucker, sex'
+  'faggot', 'bastard', 'slut', 'whore', 'motherfucker', "fubu", "fuck", "kill", "dick", "pussy", "cock", "sex"
 ];
 
 const LEET_MAP = {

@@ -5,7 +5,9 @@ import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
 import { checkText } from "./utils/wordFilter";
-
+import SecretHeaderCard from "./components/SecretHeaderCard";
+import WorldLabel from "./components/WorldLabel";
+import { generateFingerprint, checkRateLimit, logAction } from "./utils/antiSpam";
 // Components
 import Atmosphere from "./components/Atmosphere";
 import Constellations from "./components/Constellations";
@@ -29,7 +31,6 @@ import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
 import DonationModal from "./components/DonationModal";
 import NotificationBell from "./components/NotificationBell";
-
 
 export default function App() {
   return (
@@ -58,9 +59,9 @@ function AppContent() {
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [activeSecretId, setActiveSecretId] = useState(null);
-  // NEW: State for real-time presence
   const [onlineCount, setOnlineCount] = useState(1);
 
+  // --- DATABASE & REALTIME LOGIC ---
   useEffect(() => {
     const fetchSecrets = async () => {
       const { data } = await supabase
@@ -72,56 +73,50 @@ function AppContent() {
     
     fetchSecrets();
 
-    // GENERATE A UNIQUE ID FOR THIS SESSION
     const sessionUserId = `user-${Math.random().toString(36).substr(2, 9)}`;
-
     const channel = supabase.channel('global_presence', {
-      config: { 
-        presence: { 
-          key: sessionUserId  // <--- This ensures every visitor is unique
-        } 
-      }
+      config: { presence: { key: sessionUserId } }
     });
 
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
-        // We count the total number of unique keys present
-        const count = Object.keys(newState).length;
-        setOnlineCount(count); 
+        setOnlineCount(Object.keys(newState).length); 
       })
-// Inside AppContent useEffect
-.on('postgres_changes', {
-  event: '*',
-  schema: 'public',
-  table: 'unspoken_words'
-}, (payload) => {
-  if (payload.eventType === 'INSERT') {
-    setSecrets((prev) => [payload.new, ...prev]);
-    setNotification("A new heart has shared a secret...");
-    setTimeout(() => setNotification(null), 4000);
-  }
-  
-  if (payload.eventType === 'UPDATE') {
-    setSecrets((prev) => prev.map(s => {
-      if (s.id === payload.new.id) {
-        // Trigger pulse if nods increased
-        if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'unspoken_words'
+      }, (payload) => {
+        // HANDLER: INSERT (The Triple-Post Fix)
+        if (payload.eventType === 'INSERT') {
+          setSecrets((prev) => {
+            const alreadyExists = prev.some(s => s.id === payload.new.id);
+            if (alreadyExists) return prev; 
+            return [payload.new, ...prev];
+          });
+          setNotification("A new heart has shared a secret...");
+          setTimeout(() => setNotification(null), 4000);
+        }
         
-        // CHECK FOR NEW WHISPERS: 
-        // If the reply count increased, the bell needs to see the new data
-        return payload.new; 
-      }
-      return s;
-    }));
-    
-    // FORCING A RE-CHECK: Optional but ensures the Bell logic runs
-    // window.dispatchEvent(new Event('check_notifications'));
-  }
-})
+        // HANDLER: UPDATE
+        if (payload.eventType === 'UPDATE') {
+          setSecrets((prev) => prev.map(s => {
+            if (s.id === payload.new.id) {
+              if (payload.new.nods > (s.nods || 0)) triggerNodPulse();
+              return payload.new; 
+            }
+            return s;
+          }));
+        }
+
+        // HANDLER: DELETE
+        if (payload.eventType === 'DELETE') {
+          setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
+        }
+      })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Track the unique session
           await channel.track({ online_at: new Date().toISOString() });
         }
       });
@@ -129,89 +124,22 @@ function AppContent() {
     return () => supabase.removeChannel(channel);
   }, []);
 
+  // --- ACTION HANDLERS ---
+
+  const handleNewPostSuccess = (newPost) => {
+    // We do NOT add to secrets here. The postgres_changes listener above handles it.
+    setNotification("Your secret has been shared with the world.");
+    setSelectedLocation(null);
+    setIsPlacementMode(false);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
   const triggerNodPulse = () => {
     setIsNodding(true);
     if (navigator.vibrate) navigator.vibrate(50);
     setTimeout(() => setIsNodding(false), 800);
   };
 
-const handlePost = async (inputText, captchaToken) => {
-  if (!inputText.trim()) return;
-
-if (!captchaToken) {
-    setNotification("Waiting for security check... please try again in a second.");
-    return;
-  }
-
-  const result = checkText(inputText);
-  if (result.isProfane) {
-    setNotification(`Silence must be kind. Found ${result.count} forbidden word(s).`);
-    setTimeout(() => setNotification(null), 4000);
-    return;
-  }
-
-  if (useCurrentLocation) {
-    setNotification("Accessing GPS...");
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        // Gagamit na tayo ng postToEdgeFunction sa halip na postToDatabase
-        await postToEdgeFunction(inputText, pos.coords.latitude, pos.coords.longitude, captchaToken);
-      },
-      (geoError) => {
-        alert("Location Error: Please allow location access to post.");
-        setNotification("Location denied.");
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  } else {
-    if (!selectedLocation) {
-      setNotification("Please click on the map to choose a location.");
-      setIsPlacementMode(true);
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-    // Gagamit na tayo ng postToEdgeFunction
-    await postToEdgeFunction(inputText, selectedLocation.lat, selectedLocation.lng, captchaToken);
-    setSelectedLocation(null);
-    setIsPlacementMode(false);
-  }
-};
-const postToEdgeFunction = async (text, lat, lng, token) => {
-  setNotification("Verifying and sharing...");
-  
-  try {
-    // Call the Supabase Edge Function ('post-word')
-    const { data, error } = await supabase.functions.invoke('post-word', {
-      body: { 
-        word: text, 
-        lat: lat, 
-        lng: lng, 
-        captchaToken: token 
-      },
-    });
-
-    if (error) {
-      console.error("Post Error:", error);
-      setNotification("Post failed: Verification error.");
-      return;
-    }
-
-    console.log("Edge Function Response:", data); // DEBUG: See what we got back
-
-    // CRITICAL: Save the secret ID so delete button appears
-    if (data && data.id) {
-      const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-      localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, data.id]));
-      setNotification("Message sent.");
-    } else {
-      console.error("Edge Function didn't return secret ID. Full response:", data);
-      setNotification("Posted but couldn't track ownership.");
-    }
-  } catch (err) {
-    console.error("Unexpected error:", err);
-    setNotification("Post failed unexpectedly.");
-  }
-};
   const markAsVisited = (id) => {
     if (!visited.includes(id)) {
       const updated = [...visited, id];
@@ -220,45 +148,19 @@ const postToEdgeFunction = async (text, lat, lng, token) => {
     }
   };
 
-  const postToDatabase = async (text, lat, lng) => {
-    setNotification("Sharing to the map...");
-    const { data, error } = await supabase
-      .from('unspoken_words')
-      .insert([{
-        text: text,
-        lat: lat,
-        lng: lng,
-        is_listening: false
-      }])
-      .select();
-
-    if (error) {
-      alert("Database Error: " + error.message);
-      setNotification("Post failed.");
-      return;
-    }
-
-    if (data && data.length > 0) {
-      const newId = data[0].id;
-      const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-      localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newId]));
-      setNotification("Message sent.");
-    }
-  };
-
   const handleLocationSelect = (lat, lng) => {
     setSelectedLocation({ lat, lng });
     setIsPlacementMode(false);
-    setNotification("📍 Location selected! Now write your message and post.");
-    setTimeout(() => setNotification(null), 4000);
+    setNotification("📍 Location selected!");
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const handleLocationModeToggle = (useCurrent) => {
     setUseCurrentLocation(useCurrent);
     if (!useCurrent) {
       setIsPlacementMode(true);
-      setNotification("Click anywhere on the map to choose your location, or search for a place.");
-      setTimeout(() => setNotification(null), 5000);
+      setNotification("Click anywhere on the map to choose your location.");
+      setTimeout(() => setNotification(null), 4000);
     } else {
       setSelectedLocation(null);
       setIsPlacementMode(false);
@@ -270,7 +172,7 @@ const postToEdgeFunction = async (text, lat, lng, token) => {
     setTargetPos([lat, lng]); 
     setIsPlacementMode(false);
     setNotification(`📍 ${displayName.split(',')[0]} selected!`);
-    setTimeout(() => setNotification(null), 4000);
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const handleNod = async (id, currentNods) => {
@@ -285,113 +187,108 @@ const postToEdgeFunction = async (text, lat, lng, token) => {
     }
 
     const newCount = hasNodded ? Math.max(0, currentNods - 1) : currentNods + 1;
+    // Optimistic UI update
     setSecrets(prev => prev.map(s => s.id === id ? { ...s, nods: newCount } : s));
 
     const updatedNods = hasNodded ? noddedSecrets.filter(i => i !== id) : [...noddedSecrets, id];
     localStorage.setItem("nodded_secrets", JSON.stringify(updatedNods));
     await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
   };
+
 const handleAddWhisper = async (id, whisperText) => {
   if (!whisperText.trim()) return;
-
+  
+  // 1. Minimum length check
+  if (whisperText.trim().length < 2) {
+    setNotification("Whisper must be at least 2 characters.");
+    setTimeout(() => setNotification(null), 3000);
+    return;
+  }
+  
+  // 2. Profanity check
   const result = checkText(whisperText);
   if (result.isProfane) {
-    setNotification(`Whispers must be gentle. Found ${result.count} forbidden word(s).`);
+    setNotification(`Found ${result.count} forbidden word(s).`);
     setTimeout(() => setNotification(null), 4000);
     return;
   }
 
-  // 1. Get the latest replies from DB before updating
-  const { data: currentSecret, error: fetchError } = await supabase
+  // 3. Rate limit check - CRITICAL FOR SPAM PREVENTION
+  const fingerprint = await generateFingerprint();
+  const rateCheck = await checkRateLimit(supabase, fingerprint, 'whisper');
+  if (!rateCheck.allowed) {
+    setNotification(`Too many whispers. ${rateCheck.reason}`);
+    setTimeout(() => setNotification(null), 4000);
+    return;
+  }
+
+  // 4. Check for duplicate whispers (last 2 minutes)
+  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: currentSecret } = await supabase
     .from('unspoken_words')
     .select('replies')
     .eq('id', id)
     .single();
-
-  if (fetchError) {
-    console.error("Fetch Error:", fetchError);
-    setNotification("Could not find the secret...");
-    return;
-  }
-
-  // 2. Prepare the new array
-  const newReply = { 
-    text: whisperText, 
-    created_at: new Date().toISOString() 
-  };
   
-  const updatedReplies = [...(currentSecret?.replies || []), newReply];
-
-  // 3. Update the Database
-  const { error: updateError } = await supabase
-    .from('unspoken_words')
-    .update({ replies: updatedReplies }) 
-    .eq('id', id);
-
-  if (updateError) {
-    console.error("Supabase Update Error:", updateError);
-    setNotification("The whisper was lost in the wind (Database Error).");
+  const recentDuplicate = currentSecret?.replies?.some(reply => 
+    reply.text === whisperText.trim() && 
+    new Date(reply.created_at) > new Date(twoMinutesAgo)
+  );
+  
+  if (recentDuplicate) {
+    setNotification("You just sent this whisper. Please wait before sending again.");
     setTimeout(() => setNotification(null), 3000);
     return;
   }
 
-  // --- START NEW NOTIFICATION LOGIC ---
-  // Save this secret ID to 'commented_secrets' so the bell watches it even if it's not yours
-  const commentedSecrets = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-  if (!commentedSecrets.includes(id)) {
-    localStorage.setItem("commented_secrets", JSON.stringify([...commentedSecrets, id]));
-  }
-  // --- END NEW NOTIFICATION LOGIC ---
+  // 5. Add the whisper
+  const newReply = { text: whisperText.trim(), created_at: new Date().toISOString() };
+  const updatedReplies = [...(currentSecret?.replies || []), newReply];
 
-  // 4. Update local state ONLY if the DB update was successful
-  setSecrets(prev => prev.map(s => 
-    s.id === id ? { ...s, replies: updatedReplies } : s
-  ));
+  const { error } = await supabase
+    .from('unspoken_words')
+    .update({ replies: updatedReplies })
+    .eq('id', id);
+
+  if (!error) {
+    // 6. Log the action - IMPORTANT FOR TRACKING
+    await logAction(supabase, fingerprint, 'whisper', navigator.userAgent);
+    
+    // 7. Update localStorage
+    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+    if (!commented.includes(id)) {
+      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
+    }
+    
+    // 8. Update UI
+    setSecrets(prev => prev.map(s => s.id === id ? { ...s, replies: updatedReplies } : s));
+    setNotification("Whisper sent.");
+  } else {
+    setNotification("Failed to send whisper. Try again.");
+  }
   
-  setNotification("Whisper sent.");
   setTimeout(() => setNotification(null), 3000);
 };
-  const handleDonateClick = () => {
-    setShowDonationModal(true);
-  };
-
-  const handleDeleteSecret = (id) => {
-    setDeleteTargetId(id);
-  };
 
   const confirmDelete = async () => {
     if (!deleteTargetId) return;
-    
     const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
     
-    if (!mySecrets.includes(deleteTargetId)) {
-      setNotification("You can only delete your own secrets.");
-      setTimeout(() => setNotification(null), 3000);
-      setDeleteTargetId(null);
-      return;
-    }
-
-    const { error } = await supabase
-      .from('unspoken_words')
-      .delete()
-      .eq('id', deleteTargetId);
+    const { error } = await supabase.from('unspoken_words').delete().eq('id', deleteTargetId);
 
     if (!error) {
       setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
-      const updatedSecrets = mySecrets.filter(secretId => secretId !== deleteTargetId);
-      localStorage.setItem("my_secrets", JSON.stringify(updatedSecrets));
+      localStorage.setItem("my_secrets", JSON.stringify(mySecrets.filter(id => id !== deleteTargetId)));
       setNotification("Secret deleted.");
-    } else {
-      setNotification("Failed to delete.");
     }
-    
-    setTimeout(() => setNotification(null), 3000);
     setDeleteTargetId(null);
+    setTimeout(() => setNotification(null), 3000);
   };
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
       <Atmosphere isNodding={isNodding} isDark={isDark} />
+
       <MapSearch 
         isDark={isDark}
         isVisible={!useCurrentLocation}
@@ -401,13 +298,8 @@ const handleAddWhisper = async (id, whisperText) => {
       {showManifesto && <ManifestoOverlay onClose={() => setShowManifesto(false)} />}
       {showAboutModal && <AboutModal onClose={() => setShowAboutModal(false)} />}
       {showContactModal && <ContactModal onClose={() => setShowContactModal(false)} setNotification={setNotification} />}
-      {showDonationModal && (
-        <DonationModal 
-          isOpen={showDonationModal}
-          onClose={() => setShowDonationModal(false)} 
-          isDark={isDark}
-        />
-      )}
+      {showDonationModal && <DonationModal isOpen={showDonationModal} onClose={() => setShowDonationModal(false)} isDark={isDark} />}
+      
       {deleteTargetId && (
         <DeleteConfirmationModal
           isOpen={!!deleteTargetId}
@@ -418,89 +310,59 @@ const handleAddWhisper = async (id, whisperText) => {
       )}
 
       <Notification message={notification} isDark={isDark} />
-      
-      {/* Updated: Uses live onlineCount */}
       <PresenceCounter count={onlineCount} isDark={isDark} />
-      
 
-{/* Floating UI Controls - TOP RIGHT */}
-<div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001] pointer-events-auto">
-<NotificationBell 
-  isDark={isDark}
-  secrets={secrets}
-  onNotificationClick={(lat, lng, id) => {
-    // Follow the same pattern as the sidebar
-    setTargetPos([lat, lng]);
-    setActiveSecretId(id); 
-    markAsVisited(id);
-  }}
-/>
-  <ThemeToggle />
-  <MenuButton 
-    isOpen={showSidebar} 
-    onClick={() => setShowSidebar(!showSidebar)} 
-    isDark={isDark} 
-  />
-</div>
+      {/* NAVIGATION CONTROLS */}
+      <div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001]">
+        <NotificationBell 
+          isDark={isDark} 
+          secrets={secrets} 
+          onNotificationClick={(lat, lng, id) => {
+            setTargetPos([lat, lng]);
+            setActiveSecretId(id); 
+            markAsVisited(id);
+          }}
+        />
+        <ThemeToggle />
+        <MenuButton isOpen={showSidebar} onClick={() => setShowSidebar(!showSidebar)} isDark={isDark} />
+      </div>
 
-{/* Sidebar also needs high Z-index */}
-{/* Sidebar needs to trigger the Active ID */}
-<Sidebar
-  isOpen={showSidebar}
-  secrets={secrets}
-  visited={visited}
-  isDark={isDark}
-  onSecretClick={(lat, lng, id) => {
-    // 1. Update the target position for the MapController (if still using it)
-    setTargetPos([lat, lng]); 
-    
-    // 2. TRIGGER THE REVEAL: This is the key
-    setActiveSecretId(id); 
-    
-    // 3. UI logic
-    setShowSidebar(false);
-    markAsVisited(id);
-  }}
-/>
+      <Sidebar
+        isOpen={showSidebar}
+        secrets={secrets}
+        visited={visited}
+        isDark={isDark}
+        onSecretClick={(lat, lng, id) => {
+          setTargetPos([lat, lng]); 
+          setActiveSecretId(id); 
+          setShowSidebar(false);
+          markAsVisited(id);
+        }}
+      />
+
+      {/* THE MAP */}
       <MapContainer 
         center={[13, 122]} 
-        zoom={4}              
-        minZoom={3}           
-        worldCopyJump={true}  
-        noWrap={false}        
+        zoom={4} 
+        minZoom={3} 
         zoomControl={false} 
         className="h-full w-full z-0"
       >
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
+        <WorldLabel isDark={isDark} />
         <MapController secrets={secrets} targetPos={targetPos} setZoomLevel={setZoomLevel} />
-        <MapClickHandler 
-          isPlacementMode={isPlacementMode} 
-          onLocationSelect={handleLocationSelect}
-        />
+        <MapClickHandler isPlacementMode={isPlacementMode} onLocationSelect={handleLocationSelect} />
         <Constellations secrets={secrets} zoomLevel={zoomLevel} />
         
         {selectedLocation && (
           <Marker
             position={[selectedLocation.lat, selectedLocation.lng]}
+            
             icon={L.divIcon({
               className: 'preview-marker',
-              html: `<div style="
-                background: linear-gradient(135deg, #f59e0b, #fb923c);
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-                border: 3px solid white;
-                box-shadow: 0 0 20px rgba(245, 158, 11, 0.6), 0 4px 12px rgba(0,0,0,0.3);
-                animation: bounce 1s ease-in-out infinite;
-              "></div>
-              <style>
-                @keyframes bounce {
-                  0%, 100% { transform: translateY(0); }
-                  50% { transform: translateY(-10px); }
-                }
-              </style>`,
-              iconSize: [24, 24],
-              iconAnchor: [12, 12],
+              html: `<div class="marker-bounce" style="background: #f59e0b; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white;"></div>`,
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
             })}
           />
         )}
@@ -509,31 +371,29 @@ const handleAddWhisper = async (id, whisperText) => {
           secrets={secrets}
           visited={visited}
           isDark={isDark}
-          activeSecretId={activeSecretId}       // <--- Pass it in
-  setActiveSecretId={setActiveSecretId}
+          activeSecretId={activeSecretId}
+          setActiveSecretId={setActiveSecretId}
           onMarkAsVisited={markAsVisited} 
           onNod={handleNod}
           onWhisper={handleAddWhisper}
-          onDelete={handleDeleteSecret} 
+          onDelete={(id) => setDeleteTargetId(id)} 
           setNotification={setNotification}
         />
+        
       </MapContainer>
       
       {!showManifesto && <MapLegend isDark={isDark} />}
 
-
-      
       <BottomDock
         onAboutClick={() => setShowAboutModal(true)}
         onContactClick={() => setShowContactModal(true)}
-        onDonateClick={handleDonateClick}
-        onPost={(text, token) => handlePost(text, token)}
+        onDonateClick={() => setShowDonationModal(true)}
+        onPostSuccess={handleNewPostSuccess} 
         isDark={isDark}
         useCurrentLocation={useCurrentLocation}
         onLocationModeToggle={handleLocationModeToggle}
         selectedLocation={selectedLocation}
       />
-      <Analytics />
     </div>
   );
 }
