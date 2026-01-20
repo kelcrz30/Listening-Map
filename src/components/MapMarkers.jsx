@@ -422,7 +422,7 @@ export default function MapMarkers({
                         }}
                       >
                         <p
-                          className={`text-md md:text-lg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
+                          className={`text-lg md:text-lg font-serif italic leading-relaxed break-words whitespace-pre-wrap ${
                             isDark ? "text-white" : "text-black"
                           }`}
                         >
@@ -430,105 +430,91 @@ export default function MapMarkers({
                         </p>
                       </div>
 
-                      <div className="mb-4 px-2">
-                        <div
-                          ref={scrollRef}
-                          className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
-                            isDark
-                              ? "bg-white/5 border-white/10"
-                              : "bg-gray-50 border-gray-100"
-                          }`}
-                          style={{ 
-                            overscrollBehavior: 'contain',
-                            WebkitOverflowScrolling: 'touch'
-                          }}
-                          onWheel={(e) => e.stopPropagation()}
-                          onTouchStart={(e) => e.stopPropagation()}
-                          onTouchMove={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
-                          <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
-                            Whisper Thread
-                          </p>
+                     <div className="mb-4 px-2">
+  <div
+    ref={scrollRef}
+    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
+      isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"
+    }`}
+    style={{ 
+      overscrollBehavior: 'contain',
+      WebkitOverflowScrolling: 'touch'
+    }}
+    onWheel={(e) => e.stopPropagation()}
+    onTouchStart={(e) => e.stopPropagation()}
+    onTouchMove={(e) => e.stopPropagation()}
+    onMouseDown={(e) => e.stopPropagation()}
+  >
+    {/* Added a dynamic counter here */}
+    <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
+      Whisper Thread ({currentSecret.replies?.length || 0}/10)
+    </p>
 
-                          {currentSecret.whispers && (
-                            <div className="border-b border-white/5 pb-2">
-                              <p
-                                className={`text-[11px] italic break-words break-all ${
-                                  isDark
-                                    ? "text-orange-200/80"
-                                    : "text-orange-700"
-                                }`}
-                              >
-                                "{currentSecret.whispers}"
-                              </p>
-                              <span className="text-[7px] uppercase opacity-30 mt-1 block">
-                                Original Whisper
-                              </span>
-                            </div>
-                          )}
+    {currentSecret.whispers && (
+      <div className="border-b border-white/5 pb-2">
+        <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
+          "{currentSecret.whispers}"
+        </p>
+        <span className="text-[7px] uppercase opacity-30 mt-1 block">Original Whisper</span>
+      </div>
+    )}
 
-                          {currentSecret.replies?.map((reply, index) => (
-                            <div
-                              key={index}
-                              className="border-b border-white/5 last:border-0 pb-2"
-                            >
-                              <p
-                                className={`text-[11px] italic break-words break-all ${
-                                  isDark
-                                    ? "text-orange-200/80"
-                                    : "text-orange-700"
-                                }`}
-                              >
-                                "{reply.text || reply}"
-                              </p>
-                              <span className="text-[7px] uppercase opacity-30 mt-1 block">
-                                {reply.created_at
-                                  ? formatRelativeTime(reply.created_at)
-                                  : "recently"}
-                              </span>
-                            </div>
-                          ))}
+    {currentSecret.replies?.map((reply, index) => (
+      <div key={index} className="border-b border-white/5 last:border-0 pb-2">
+        <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
+          "{reply.text || reply}"
+        </p>
+        <span className="text-[7px] uppercase opacity-30 mt-1 block">
+          {reply.created_at ? formatRelativeTime(reply.created_at) : "recently"}
+        </span>
+      </div>
+    ))}
 
-                          {!currentSecret.whispers &&
-                            (!currentSecret.replies ||
-                              currentSecret.replies.length === 0) && (
-                              <p className="text-[10px] italic opacity-30 text-center">
-                                No whispers yet... be the first
-                              </p>
-                            )}
-                        </div>
+    {!currentSecret.whispers && (!currentSecret.replies || currentSecret.replies.length === 0) && (
+      <p className="text-[10px] italic opacity-30 text-center">No whispers yet... be the first</p>
+    )}
+  </div>
 
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Whisper a reply..."
-                            className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
-                              isDark
-                                ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
-                                : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
-                            }`}
-                            value={whisperInput}
-                            onChange={(e) => setWhisperInput(e.target.value)}
-                            onTouchStart={(e) => e.stopPropagation()}
-                          />
-                          <button
-                            onClick={() => {
-                              if (whisperInput.trim()) {
-                                onWhisper(currentSecret.id, whisperInput);
-                                setWhisperInput("");
-                              }
-                            }}
-                            className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
-                              isDark
-                                ? "text-orange-400 hover:text-orange-300"
-                                : "text-orange-600 hover:text-orange-700"
-                            }`}
-                          >
-                            Reply
-                          </button>
-                        </div>
-                      </div>
+  {/* SPAM PREVENTION LOGIC STARTS HERE */}
+  {(currentSecret.replies?.length || 0) < 10 ? (
+    <div className="flex gap-2">
+      <input
+        type="text"
+        placeholder="Whisper a reply..."
+        className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
+          isDark
+            ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
+            : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
+        }`}
+        value={whisperInput}
+        onChange={(e) => setWhisperInput(e.target.value)}
+        onTouchStart={(e) => e.stopPropagation()}
+      />
+      <button
+        onClick={() => {
+          if (whisperInput.trim() && (currentSecret.replies?.length || 0) < 10) {
+            onWhisper(currentSecret.id, whisperInput);
+            setWhisperInput("");
+          }
+        }}
+        className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
+          isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
+        }`}
+      >
+        Reply
+      </button>
+    </div>
+  ) : (
+    /* This displays when the limit is hit */
+    <div className={`py-2 px-3 rounded-lg border text-center ${
+      isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"
+    }`}>
+      <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
+        This thread has reached its limit
+      </p>
+    </div>
+  )}
+</div>
 
                       <div
                         className={`flex flex-col items-center border-t pt-4 ${
