@@ -3,6 +3,7 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { generateFingerprint, checkRateLimit, logAction } from "../utils/antiSpam";
 import { checkText } from "../utils/wordFilter";
 import { supabase } from "../supabaseClient";
+import { checkForCrisisLanguage } from '../utils/mentalHealthDetector';
 
 export default function BottomDock({ 
   onAboutClick, 
@@ -12,7 +13,8 @@ export default function BottomDock({
   isDark, 
   useCurrentLocation, 
   onLocationModeToggle,
-  selectedLocation 
+  selectedLocation,
+  onCrisisDetected  
 }) {
   const [inputText, setInputText] = useState("");
   const [captchaToken, setCaptchaToken] = useState(null);
@@ -53,36 +55,29 @@ export default function BottomDock({
     }
   }, [error]);
 
-  const handlePost = async () => {
+ const handlePost = async () => {
+    // 1. Basic validation
     if (!captchaToken || cooldown > 0 || !inputText.trim() || isPosting) return;
-    
+
     setIsPosting(true);
     setError("");
 
     try {
       const trimmedText = inputText.trim();
 
-      // 1. Minimum length check
+      // 2. Mental Health / Crisis Check
+      const crisisCheck = checkForCrisisLanguage(trimmedText); // FIX: Changed 'text' to 'trimmedText'
+      if (crisisCheck.isCrisis) {
+        if (onCrisisDetected) {
+          onCrisisDetected(); // This triggers the modal in App.js
+        }
+        // NOTE: We don't 'return' here because we want them to be able to share, 
+        // but they will see the help resources simultaneously.
+      }
+
+      // 3. Minimum length check
       if (trimmedText.length < 3) {
         setError("Message must be at least 3 characters.");
-        setIsPosting(false);
-        return;
-      }
-
-      // 2. Profanity check
-      const textCheck = checkText(trimmedText);
-      if (textCheck.isProfane) {
-        setError(`Found ${textCheck.count} forbidden word(s). Please revise.`);
-        setIsPosting(false);
-        return;
-      }
-
-      // 3. Rate limit check
-      const fingerprint = await generateFingerprint();
-      const rateCheck = await checkRateLimit(supabase, fingerprint, 'post');
-      
-      if (!rateCheck.allowed) {
-        setError(`Limit reached. ${rateCheck.reason}`);
         setIsPosting(false);
         return;
       }

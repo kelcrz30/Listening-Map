@@ -4,18 +4,72 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/sulyap-icon.png" /> 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet MarkerCluster CSS & JS -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
-    <meta name="description" content="A digital map for the things we leave unsaid. Whisper your secrets into the silence." />
-    
-    <title>Sulyap</title>
+    <title>Sulyap | On Hold</title>
+    <style>
+      body {
+        margin: 0;
+        background-color: #000;
+        color: #fff;
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+      }
+      .container {
+        padding: 20px;
+        max-width: 400px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        letter-spacing: 2px;
+        margin-bottom: 10px;
+      }
+      p {
+        font-size: 14px;
+        color: #a1a1aa;
+        line-height: 1.5;
+        margin-bottom: 30px;
+      }
+      .qr-card {
+        background: #fff;
+        padding: 15px;
+        border-radius: 20px;
+        display: inline-block;
+        margin-bottom: 20px;
+      }
+      .qr-card img {
+        width: 240px;
+        height: 240px;
+        display: block;
+      }
+      .gcash-label {
+        color: #3b82f6;
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 1px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div class="container">
+      <h1>Sulyap is on hold</h1>
+      
+      <p>
+        The free trial for our database has ended. We are currently looking for funds to continue this website and keep it running.
+      </p>
+
+      <div class="qr-card">
+        <img src="/gcash-qr.jpg" alt="GCash QR">
+      </div>
+
+      <div class="gcash-label">Scan to donate via GCash</div>
+      
+      <p style="margin-top: 20px; font-size: 11px; opacity: 0.5;">
+        Any amount helps us pay for the database and hosting. Thank you.
+      </p>
+    </div>
   </body>
 </html>

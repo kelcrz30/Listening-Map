@@ -31,6 +31,8 @@ import "leaflet/dist/leaflet.css";
 import MapLegend from "./components/MapLegend";
 import DonationModal from "./components/DonationModal";
 import NotificationBell from "./components/NotificationBell";
+import MentalHealthModal from './components/MentalHealthModal';
+import { checkForCrisisLanguage } from './utils/mentalHealthDetector';
 
 export default function App() {
   return (
@@ -60,7 +62,7 @@ function AppContent() {
   const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [activeSecretId, setActiveSecretId] = useState(null);
   const [onlineCount, setOnlineCount] = useState(1);
-
+ const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
   // --- DATABASE & REALTIME LOGIC ---
   useEffect(() => {
     const fetchSecrets = async () => {
@@ -198,6 +200,11 @@ function AppContent() {
 const handleAddWhisper = async (id, whisperText) => {
   if (!whisperText.trim()) return;
   
+ const crisisCheck = checkForCrisisLanguage(whisperText);
+ console.log("Crisis Check Result:", crisisCheck);
+  if (crisisCheck.isCrisis) {
+    setShowMentalHealthModal(true);
+  }
   // 1. Minimum length check
   if (whisperText.trim().length < 2) {
     setNotification("Whisper must be at least 2 characters.");
@@ -393,7 +400,16 @@ const handleAddWhisper = async (id, whisperText) => {
         useCurrentLocation={useCurrentLocation}
         onLocationModeToggle={handleLocationModeToggle}
         selectedLocation={selectedLocation}
+        onCrisisDetected={() => setShowMentalHealthModal(true)}
       />
+      {/* ... all your existing components ... */}
+      
+      <MentalHealthModal 
+        isOpen={showMentalHealthModal}
+        onClose={() => setShowMentalHealthModal(false)}
+        isDark={isDark}
+      />
+
     </div>
   );
 }
