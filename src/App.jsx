@@ -62,22 +62,22 @@ function AppContent() {
   const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [activeSecretId, setActiveSecretId] = useState(null);
   const [onlineCount, setOnlineCount] = useState(1);
- const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
+  const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
+
   // --- DATABASE & REALTIME LOGIC ---
-useEffect(() => {
+  useEffect(() => {
     const fetchSecrets = async () => {
       const { data } = await supabase
         .from('unspoken_words')
-        .select('*')
+        .select('*, post_pin')
         .order('created_at', { ascending: false })
-        .limit(500); // 👈 ADD THIS: Limits the initial load to the 500 most recent secrets
+        .limit(500);
       
       if (data) setSecrets(data);
     };
     
     fetchSecrets();
 
-    // ... (rest of your presence and channel logic stays the same)
     const sessionUserId = `user-${Math.random().toString(36).substr(2, 9)}`;
     const channel = supabase.channel('global_presence', {
       config: { presence: { key: sessionUserId } }
@@ -88,31 +88,42 @@ useEffect(() => {
         const newState = channel.presenceState();
         setOnlineCount(Object.keys(newState).length); 
       })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'unspoken_words'
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setSecrets((prev) => {
-            const alreadyExists = prev.some(s => s.id === payload.new.id);
-            if (alreadyExists) return prev; 
-            // New secrets will still be added to the top of your list in real-time!
-            return [payload.new, ...prev];
-          });
-          setNotification("A new heart has shared a secret...");
-          setTimeout(() => setNotification(null), 4000);
-        }
-        
-        // ... (UPDATE and DELETE handlers stay the same)
-        if (payload.eventType === 'UPDATE') {
-          setSecrets((prev) => prev.map(s => s.id === payload.new.id ? payload.new : s));
-        }
+ .on('postgres_changes', {
+  event: '*',
+  schema: 'public',
+  table: 'unspoken_words'
+}, (payload) => {
+  console.log("📡 Realtime event:", payload.eventType, payload);
+  
+  // --- HANDLE NEW SECRETS ---
+  if (payload.eventType === 'INSERT') {
+    setSecrets((prev) => {
+      const alreadyExists = prev.some(s => s.id === payload.new.id);
+      if (alreadyExists) return prev; 
+      return [payload.new, ...prev];
+    });
+    setNotification("A new heart has shared a secret...");
+    setTimeout(() => setNotification(null), 4000);
+  }
+  
+if (payload.eventType === 'UPDATE') {
+  setSecrets((prev) => prev.map(s => 
+    // This merges the old secret 's' with the new changes in 'payload.new'
+    s.id === payload.new.id ? { ...s, ...payload.new } : s
+  ));
+  
+  // Logic for your own secret notifications
+  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+  if (mySecrets.includes(payload.new.id)) {
+    setNotification("Someone whispered back to your secret...");
+  }
+}
 
-        if (payload.eventType === 'DELETE') {
-          setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
-        }
-      })
+  // --- HANDLE DELETIONS ---
+  if (payload.eventType === 'DELETE') {
+    setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
+  }
+})
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ online_at: new Date().toISOString() });
@@ -124,14 +135,17 @@ useEffect(() => {
 
   // --- ACTION HANDLERS ---
 
-  const handleNewPostSuccess = (newPost) => {
-    // We do NOT add to secrets here. The postgres_changes listener above handles it.
+const handleNewPostSuccess = (newPost) => {
     setNotification("Your secret has been shared with the world.");
     setSelectedLocation(null);
     setIsPlacementMode(false);
+
+    // Store the post ID so we can track replies to it
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newPost.id]));
+
     setTimeout(() => setNotification(null), 3000);
   };
-
   const triggerNodPulse = () => {
     setIsNodding(true);
     if (navigator.vibrate) navigator.vibrate(50);
@@ -185,7 +199,6 @@ useEffect(() => {
     }
 
     const newCount = hasNodded ? Math.max(0, currentNods - 1) : currentNods + 1;
-    // Optimistic UI update
     setSecrets(prev => prev.map(s => s.id === id ? { ...s, nods: newCount } : s));
 
     const updatedNods = hasNodded ? noddedSecrets.filter(i => i !== id) : [...noddedSecrets, id];
@@ -196,19 +209,15 @@ useEffect(() => {
 const handleAddWhisper = async (id, whisperText) => {
   if (!whisperText.trim()) return;
   
- const crisisCheck = checkForCrisisLanguage(whisperText);
- console.log("Crisis Check Result:", crisisCheck);
-  if (crisisCheck.isCrisis) {
-    setShowMentalHealthModal(true);
-  }
-  // 1. Minimum length check
+  // 1. Checks
+  const crisisCheck = checkForCrisisLanguage(whisperText);
+  if (crisisCheck.isCrisis) setShowMentalHealthModal(true);
   if (whisperText.trim().length < 2) {
     setNotification("Whisper must be at least 2 characters.");
     setTimeout(() => setNotification(null), 3000);
     return;
   }
   
-  // 2. Profanity check
   const result = checkText(whisperText);
   if (result.isProfane) {
     setNotification(`Found ${result.count} forbidden word(s).`);
@@ -216,7 +225,7 @@ const handleAddWhisper = async (id, whisperText) => {
     return;
   }
 
-  // 3. Rate limit check - CRITICAL FOR SPAM PREVENTION
+  // 2. Anti-Spam
   const fingerprint = await generateFingerprint();
   const rateCheck = await checkRateLimit(supabase, fingerprint, 'whisper');
   if (!rateCheck.allowed) {
@@ -225,68 +234,100 @@ const handleAddWhisper = async (id, whisperText) => {
     return;
   }
 
-  // 4. Check for duplicate whispers (last 2 minutes)
-  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-  const { data: currentSecret } = await supabase
+  // 3. GET THE ABSOLUTE LATEST DATA (Crucial fix for "First comment gone")
+  const { data: latestSecret, error: fetchError } = await supabase
     .from('unspoken_words')
     .select('replies')
     .eq('id', id)
     .single();
-  
-  const recentDuplicate = currentSecret?.replies?.some(reply => 
-    reply.text === whisperText.trim() && 
-    new Date(reply.created_at) > new Date(twoMinutesAgo)
-  );
-  
-  if (recentDuplicate) {
-    setNotification("You just sent this whisper. Please wait before sending again.");
-    setTimeout(() => setNotification(null), 3000);
+
+  if (fetchError) {
+    setNotification("The void is unreachable right now.");
     return;
   }
 
-  // 5. Add the whisper
-  const newReply = { text: whisperText.trim(), created_at: new Date().toISOString() };
-  const updatedReplies = [...(currentSecret?.replies || []), newReply];
+  // 4. PREPARE THE THREAD (Crucial fix for "Overwriting")
+  const currentReplies = Array.isArray(latestSecret?.replies) ? latestSecret.replies : [];
+  const newReply = { 
+    text: whisperText.trim(), 
+    created_at: new Date().toISOString() 
+  };
+  
+  // Combine OLD + NEW
+  const updatedReplies = [...currentReplies, newReply];
 
-  const { error } = await supabase
+  // 5. UPDATE DATABASE
+  const { error: updateError } = await supabase
     .from('unspoken_words')
-    .update({ replies: updatedReplies })
+    .update({ replies: updatedReplies }) // This saves it so it's there on refresh
     .eq('id', id);
 
-  if (!error) {
-    // 6. Log the action - IMPORTANT FOR TRACKING
+  if (!updateError) {
     await logAction(supabase, fingerprint, 'whisper', navigator.userAgent);
     
-    // 7. Update localStorage
+    // Update Notification Bell logic
     const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
     if (!commented.includes(id)) {
       localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
     }
+
+    const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");
+    lastSeenCounts[id] = updatedReplies.length;
+    localStorage.setItem("last_seen_reply_counts", JSON.stringify(lastSeenCounts));
     
-    // 8. Update UI
-    setSecrets(prev => prev.map(s => s.id === id ? { ...s, replies: updatedReplies } : s));
+    // 6. UPDATE LOCAL STATE IMMEDIATELY
+    setSecrets(prev => prev.map(s => 
+      s.id === id ? { ...s, replies: updatedReplies } : s
+    ));
+    
     setNotification("Whisper sent.");
   } else {
-    setNotification("Failed to send whisper. Try again.");
+    setNotification("The void rejected your whisper.");
+    console.error("Update error:", updateError);
+  }
+
+  setTimeout(() => setNotification(null), 3000);
+};
+const handleDelete = async (id, userPin) => {
+  try {
+    // 1. Get the secret first to check if it even has a PIN
+    const { data: secret } = await supabase
+      .from('unspoken_words')
+      .select('post_pin')
+      .eq('id', id)
+      .single();
+
+    // 2. Determine if we should allow deletion
+    // Allow if: Secret has no PIN OR user entered the correct PIN
+    const canDelete = !secret.post_pin || secret.post_pin === userPin;
+
+    if (!canDelete) {
+      setNotification("Incorrect PIN. This secret remains.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    // 3. Perform the delete
+    const { error } = await supabase
+      .from('unspoken_words')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    setNotification("The secret has been released back to the void.");
+    setSecrets(prev => prev.filter(s => s.id !== id));
+    
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    localStorage.setItem("my_secrets", JSON.stringify(mySecrets.filter(sid => sid !== id)));
+
+  } catch (err) {
+    console.error("Deletion failed:", err);
+    setNotification("The void refused your request.");
   }
   
   setTimeout(() => setNotification(null), 3000);
 };
-
-  const confirmDelete = async () => {
-    if (!deleteTargetId) return;
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    
-    const { error } = await supabase.from('unspoken_words').delete().eq('id', deleteTargetId);
-
-    if (!error) {
-      setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
-      localStorage.setItem("my_secrets", JSON.stringify(mySecrets.filter(id => id !== deleteTargetId)));
-      setNotification("Secret deleted.");
-    }
-    setDeleteTargetId(null);
-    setTimeout(() => setNotification(null), 3000);
-  };
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
@@ -315,7 +356,6 @@ const handleAddWhisper = async (id, whisperText) => {
       <Notification message={notification} isDark={isDark} />
       <PresenceCounter count={onlineCount} isDark={isDark} />
 
-      {/* NAVIGATION CONTROLS */}
       <div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001]">
         <NotificationBell 
           isDark={isDark} 
@@ -335,7 +375,6 @@ const handleAddWhisper = async (id, whisperText) => {
         secrets={secrets}
         visited={visited}
         isDark={isDark}
-        
         onSecretClick={(lat, lng, id) => {
           setTargetPos([lat, lng]); 
           setActiveSecretId(id); 
@@ -344,7 +383,6 @@ const handleAddWhisper = async (id, whisperText) => {
         }}
       />
 
-      {/* THE MAP */}
       <MapContainer 
         center={[13, 122]} 
         zoom={4} 
@@ -361,7 +399,6 @@ const handleAddWhisper = async (id, whisperText) => {
         {selectedLocation && (
           <Marker
             position={[selectedLocation.lat, selectedLocation.lng]}
-            
             icon={L.divIcon({
               className: 'preview-marker',
               html: `<div class="marker-bounce" style="background: #f59e0b; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white;"></div>`,
@@ -380,10 +417,9 @@ const handleAddWhisper = async (id, whisperText) => {
           onMarkAsVisited={markAsVisited} 
           onNod={handleNod}
           onWhisper={handleAddWhisper}
-          onDelete={(id) => setDeleteTargetId(id)} 
+          onDelete={handleDelete}
           setNotification={setNotification}
         />
-        
       </MapContainer>
       
       {!showManifesto && <MapLegend isDark={isDark} />}
@@ -399,14 +435,12 @@ const handleAddWhisper = async (id, whisperText) => {
         selectedLocation={selectedLocation}
         onCrisisDetected={() => setShowMentalHealthModal(true)}
       />
-      {/* ... all your existing components ... */}
       
       <MentalHealthModal 
         isOpen={showMentalHealthModal}
         onClose={() => setShowMentalHealthModal(false)}
         isDark={isDark}
       />
-
     </div>
   );
 }

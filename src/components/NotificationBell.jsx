@@ -7,6 +7,7 @@ export default function NotificationBell({ isDark, secrets, onNotificationClick 
 
   // Sync notifications whenever the secrets list changes
   useEffect(() => {
+    console.log("🔔 Bell: Checking for notifications...", secrets.length);
     checkForNewReplies();
   }, [secrets]);
 
@@ -19,63 +20,108 @@ export default function NotificationBell({ isDark, secrets, onNotificationClick 
     }
   }, [showModal]);
 
-  const checkForNewReplies = () => {
-    // Get IDs of secrets you POSTED
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    // Get IDs of secrets you REPLIED to
-    const commentedSecrets = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-    
-    // Combine them into one unique list of "Watched" IDs
-    const watchedIds = [...new Set([...mySecrets, ...commentedSecrets])];
+const checkForNewReplies = () => {
+  // Get IDs of secrets you POSTED
+  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+  // Get IDs of secrets you REPLIED to
+  const commentedSecrets = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+  
+  console.log("🔔 My secrets:", mySecrets);
+  console.log("🔔 Commented secrets:", commentedSecrets);
+  
+  // Combine them into one unique list of "Watched" IDs
+  const watchedIds = [...new Set([...mySecrets, ...commentedSecrets])];
+  
+  console.log("🔔 Watching IDs:", watchedIds);
 
-    if (watchedIds.length === 0) {
-      setAllNotifications([]);
-      setUnreadCount(0);
+  if (watchedIds.length === 0) {
+    console.log("🔔 No watched secrets");
+    setAllNotifications([]);
+    setUnreadCount(0);
+    return;
+  }
+
+  const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");
+  console.log("🔔 Last seen counts:", lastSeenCounts);
+  
+  const allUpdates = [];
+  let unreadSecretCount = 0;
+
+  watchedIds.forEach(secretId => {
+    const secret = secrets.find(s => s.id === secretId);
+    
+    console.log(`🔔 Checking secret ${secretId}:`, secret);
+    
+    if (!secret) {
+      console.log(`🔔 Secret ${secretId} not found in list`);
+      return;
+    }
+    
+    // Handle both array and empty array cases
+    const replies = Array.isArray(secret.replies) ? secret.replies : [];
+    const currentReplyCount = replies.length;
+    
+    console.log(`🔔 Secret ${secretId} has ${currentReplyCount} replies:`, replies);
+
+    if (currentReplyCount === 0) {
+      console.log(`🔔 Secret ${secretId} has no replies yet`);
       return;
     }
 
-    const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");
-    const allUpdates = [];
-    let unreadSecretCount = 0;
-
-    watchedIds.forEach(secretId => {
-      const secret = secrets.find(s => s.id === secretId);
-      if (!secret || !secret.replies || secret.replies.length === 0) return;
-
-      const currentReplyCount = secret.replies.length;
-      const lastSeenCount = lastSeenCounts[secretId] || 0;
-      const isUnread = currentReplyCount > lastSeenCount;
-      
-      // Label based on whether you own the post or just joined the thread
-      const notificationType = mySecrets.includes(secretId) ? "Your Post" : "Joined Thread";
-
-      if (currentReplyCount > 0) {
-        allUpdates.push({
-          secretId,
-          secretText: secret.text,
-          totalReplies: currentReplyCount,
-          latestReplies: secret.replies.slice(-3),
-          isUnread,
-          lat: secret.lat,
-          lng: secret.lng,
-          notificationType, 
-          lastReplyAt: secret.replies[secret.replies.length - 1].created_at 
-        });
-        
-        if (isUnread) unreadSecretCount++;
+    // ✅ FIX: For YOUR posts, initialize lastSeen to 0 if not set
+    // For posts you commented on, initialize to current count
+    const isMyPost = mySecrets.includes(secretId);
+    let lastSeenCount = lastSeenCounts[secretId];
+    
+    if (lastSeenCount === undefined) {
+      // First time checking this secret
+      if (isMyPost) {
+        // For your posts, start at 0 so you see all replies as new
+        lastSeenCount = 0;
+      } else {
+        // For posts you commented on, mark current count as seen
+        // (you already know about replies up to when you commented)
+        lastSeenCount = currentReplyCount;
+        lastSeenCounts[secretId] = currentReplyCount;
+        localStorage.setItem("last_seen_reply_counts", JSON.stringify(lastSeenCounts));
       }
-    });
+    }
+    
+    const isUnread = currentReplyCount > lastSeenCount;
+    
+    console.log(`🔔 Secret ${secretId}: current=${currentReplyCount}, lastSeen=${lastSeenCount}, isUnread=${isUnread}`);
+    
+    // Label based on whether you own the post or just joined the thread
+    const notificationType = isMyPost ? "Your Post" : "Joined Thread";
 
-    // Sort: Unread first, then by most recent date
-    const sortedUpdates = allUpdates.sort((a, b) => {
-      if (a.isUnread && !b.isUnread) return -1;
-      if (!a.isUnread && b.isUnread) return 1;
-      return new Date(b.lastReplyAt) - new Date(a.lastReplyAt);
+    allUpdates.push({
+      secretId,
+      secretText: secret.text,
+      totalReplies: currentReplyCount,
+      latestReplies: replies.slice(-3),
+      isUnread,
+      lat: secret.lat,
+      lng: secret.lng,
+      notificationType, 
+      lastReplyAt: replies[replies.length - 1].created_at 
     });
+    
+    if (isUnread) unreadSecretCount++;
+  });
 
-    setAllNotifications(sortedUpdates);
-    setUnreadCount(unreadSecretCount);
-  };
+  console.log("🔔 Total notifications:", allUpdates.length);
+  console.log("🔔 Unread count:", unreadSecretCount);
+
+  // Sort: Unread first, then by most recent date
+  const sortedUpdates = allUpdates.sort((a, b) => {
+    if (a.isUnread && !b.isUnread) return -1;
+    if (!a.isUnread && b.isUnread) return 1;
+    return new Date(b.lastReplyAt) - new Date(a.lastReplyAt);
+  });
+
+  setAllNotifications(sortedUpdates);
+  setUnreadCount(unreadSecretCount);
+};
 
   const viewSecret = (update) => {
     const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");

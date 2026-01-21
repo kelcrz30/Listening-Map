@@ -36,8 +36,7 @@ export default function MapLegend({ isDark }) {
           <div>
             <p className="text-[15px] md:text-[13px] font-bold uppercase tracking-widest leading-none mb-1.5">Unheard</p>
             <p className="text-[14px] md:text-[12px] opacity-70 leading-relaxed">
-              This is a secret that has drifted onto the map but hasn't been heard yet. 
-              It is waiting for the first person to acknowledge it.
+              This is a secret that has drifted onto the map but hasn't been heard yet.
             </p>
           </div>
         </div>
@@ -48,7 +47,7 @@ export default function MapLegend({ isDark }) {
           <div>
             <p className="text-[15px] md:text-[13px] font-bold uppercase tracking-widest text-orange-400 leading-none mb-1.5">Listening</p>
             <p className="text-[14px] md:text-[12px] opacity-70 leading-relaxed">
-              Someone else on the map has this secret open and is clicking "Listen". You are seeing their live presence in real-time.
+              Someone else is currently listening to this heart in real-time.
             </p>
           </div>
         </div>
@@ -59,7 +58,20 @@ export default function MapLegend({ isDark }) {
           <div>
             <p className="text-[15px] md:text-[13px] font-bold uppercase tracking-widest text-purple-400 leading-none mb-1.5">Echoed</p>
             <p className="text-[14px] md:text-[12px] opacity-70 leading-relaxed">
-              You have already visited this heart and sent an "Echo". It stays purple to show that this story is now part of your journey.
+              You have already visited this heart and sent an "Echo" to acknowledge it.
+            </p>
+          </div>
+        </div>
+
+        {/* Release & Permanence */}
+        <div className="flex items-start gap-4 pt-2 border-t border-white/5">
+          <div className={`w-3 h-3 mt-1 rounded-full flex items-center justify-center shrink-0 border ${isDark ? 'border-white/20' : 'border-gray-300'}`}>
+            <span className="text-[8px] leading-none">🔒</span>
+          </div>
+          <div>
+            <p className="text-[15px] md:text-[13px] font-bold uppercase tracking-widest opacity-80 leading-none mb-1.5 text-red-400">Permanence</p>
+            <p className="text-[14px] md:text-[12px] opacity-70 leading-relaxed">
+              Secrets without a 4-digit PIN stay in the void forever. If you set a PIN, you can "Release" (delete) your secret at any time.
             </p>
           </div>
         </div>

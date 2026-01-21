@@ -16,6 +16,7 @@ export default function BottomDock({
   onCrisisDetected  
 }) {
   const [inputText, setInputText] = useState("");
+  const [postPin, setPostPin] = useState(""); // Optional PIN
   const [captchaToken, setCaptchaToken] = useState(null);
   const [cooldown, setCooldown] = useState(0);
   const [isPosting, setIsPosting] = useState(false);
@@ -24,7 +25,6 @@ export default function BottomDock({
   const charLimit = 500;
   const isNearLimit = inputText.length > 450;
 
-  // 1. Load cooldown from localStorage on mount to prevent refresh bypass
   useEffect(() => {
     const savedCooldown = localStorage.getItem('post_cooldown');
     if (savedCooldown) {
@@ -33,7 +33,6 @@ export default function BottomDock({
     }
   }, []);
 
-  // 2. Cooldown Timer Logic
   useEffect(() => {
     let timer;
     if (cooldown > 0) {
@@ -50,7 +49,6 @@ export default function BottomDock({
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  // 3. Auto-hide errors
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => setError(""), 4000);
@@ -58,116 +56,79 @@ export default function BottomDock({
     }
   }, [error]);
 
-  const handlePost = async () => {
-    // Basic validation
-    if (!captchaToken || cooldown > 0 || !inputText.trim() || isPosting) return;
+ const handlePost = async () => {
+  if (!captchaToken || cooldown > 0 || !inputText.trim() || isPosting) return;
 
-    setIsPosting(true);
-    setError("");
+  setIsPosting(true);
+  setError("");
 
-    try {
-      const trimmedText = inputText.trim();
-
-      // Crisis Check
-      const crisisCheck = checkForCrisisLanguage(trimmedText);
-      if (crisisCheck.isCrisis && onCrisisDetected) {
-        onCrisisDetected(); 
-      }
-
-      if (trimmedText.length < 3) {
-        setError("Message must be at least 3 characters.");
-        setIsPosting(false);
-        return;
-      }
-
-      // Duplicate detection (last 5 minutes)
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      const { data: recentPosts } = await supabase
-        .from('unspoken_words')
-        .select('text')
-        .gte('created_at', fiveMinutesAgo)
-        .ilike('text', trimmedText);
-
-      if (recentPosts && recentPosts.length > 0) {
-        setError('This message was recently posted.');
-        setIsPosting(false);
-        return;
-      }
-
-      // Handle Geolocation
-      let lat, lng;
-      if (useCurrentLocation) {
-        try {
-          const pos = await new Promise((res, rej) => {
-            navigator.geolocation.getCurrentPosition(res, rej, { 
-              timeout: 10000,
-              enableHighAccuracy: false 
-            });
-          });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-        } catch (geoError) {
-          setError("Location access denied. Please select on map.");
-          setIsPosting(false);
-          return;
-        }
-      } else {
-        if (!selectedLocation) {
-          setError("Please select a location on the map.");
-          setIsPosting(false);
-          return;
-        }
-        lat = selectedLocation.lat;
-        lng = selectedLocation.lng;
-      }
-
-      // Insert to Supabase
-      const { data, error: dbError } = await supabase
-        .from('unspoken_words')
-        .insert([{
-          text: trimmedText,
-          lat: lat,
-          lng: lng,
-          is_listening: false,
-          nods: 0,
-          replies: []
-        }])
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      // Save ownership
-      const existingMySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-      if (data?.id) {
-        localStorage.setItem("my_secrets", JSON.stringify([...existingMySecrets, data.id]));
-      }
-
-      // Anti-Spam Logging
-      const fingerprint = await generateFingerprint();
-      await logAction(supabase, fingerprint, 'post', navigator.userAgent);
-
-      // SET COOLDOWN TO 60 SECONDS
-      const cooldownDuration = 60; 
-      const cooldownEnd = Date.now() + (cooldownDuration * 1000);
-      localStorage.setItem('post_cooldown', cooldownEnd.toString());
-      setCooldown(cooldownDuration);
-
-      // Reset UI
-      setInputText("");
-      setCaptchaToken(null); 
-      onLocationModeToggle(true); 
-      
-      if (onPostSuccess) onPostSuccess(data);
-      
-    } catch (err) {
-      console.error("Post failed:", err);
-      setError("Failed to post. Please try again.");
-    } finally {
+  try {
+    const trimmedText = inputText.trim();
+    if (trimmedText.length < 3) {
+      setError("Message must be at least 3 characters.");
       setIsPosting(false);
+      return;
     }
-  };
 
+    // Crisis check remains same
+    const crisisCheck = checkForCrisisLanguage(trimmedText);
+    if (crisisCheck.isCrisis && onCrisisDetected) onCrisisDetected();
+
+    // Get Coordinates
+    let lat, lng;
+    if (useCurrentLocation) {
+      const pos = await new Promise((res, rej) => {
+        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 });
+      });
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } else {
+      if (!selectedLocation) {
+        setError("Please select a location on the map.");
+        setIsPosting(false);
+        return;
+      }
+      lat = selectedLocation.lat;
+      lng = selectedLocation.lng;
+    }
+
+    // Prepare Data - Matching your DB screenshot columns
+    const insertData = {
+      text: trimmedText,
+      lat: lat,
+      lng: lng,
+      is_listening: false, // Matches image_f339ca.png
+      nods: 0,
+      replies: [],
+      author_role: "Anonymous", // Optional: fixes the "Anonymouse" typo
+      post_pin: postPin.length === 4 ? postPin : null, // Uses column from image_f33c94.png
+      is_visible: true
+    };
+
+    const { data, error: dbError } = await supabase
+      .from('unspoken_words')
+      .insert([insertData])
+      .select();
+
+    if (dbError) throw dbError;
+
+    // COOLDOWN & CLEANUP
+    const cooldownDuration = 60; 
+    localStorage.setItem('post_cooldown', (Date.now() + cooldownDuration * 1000).toString());
+    setCooldown(cooldownDuration);
+    setInputText("");
+    setPostPin(""); 
+    setCaptchaToken(null); 
+    
+    if (onPostSuccess) onPostSuccess(data?.[0]);
+    
+  } catch (err) {
+    console.error("Post failed:", err);
+    setError("Failed to post. The void is busy, try again.");
+  } finally {
+    setIsPosting(false);
+  }
+};
   const getPlaceholder = () => {
     if (cooldown > 0) return `Let the tides settle... (${cooldown}s)`;
     if (!useCurrentLocation && !selectedLocation) return "Set location on map first...";
@@ -201,27 +162,48 @@ export default function BottomDock({
         </div>
       )}
 
-      {/* Location Toggle */}
+      {/* Location Toggle & PIN Input */}
       {inputText.trim() && (
-        <div className={`flex items-center gap-2 p-1 rounded-xl backdrop-blur-md border ${
-          isDark ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm'
-        }`}>
-          <button
-            onClick={() => onLocationModeToggle(true)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
-              useCurrentLocation ? 'bg-indigo-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
-            }`}
-          >
-            GPS Mode
-          </button>
-          <button
-            onClick={() => onLocationModeToggle(false)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
-              !useCurrentLocation ? 'bg-orange-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
-            }`}
-          >
-            {selectedLocation ? "📍 Location Set" : "Select on Map"}
-          </button>
+        <div className="flex flex-wrap justify-center items-center gap-2">
+          <div className={`flex items-center gap-2 p-1 rounded-xl backdrop-blur-md border ${
+            isDark ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm'
+          }`}>
+            <button
+              onClick={() => onLocationModeToggle(true)}
+              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
+                useCurrentLocation ? 'bg-indigo-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
+              }`}
+            >
+              GPS Mode
+            </button>
+            <button
+              onClick={() => onLocationModeToggle(false)}
+              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
+                !useCurrentLocation ? 'bg-orange-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
+              }`}
+            >
+              {selectedLocation ? "📍 Location Set" : "Select on Map"}
+            </button>
+          </div>
+
+          {/* ✅ PIN Input - Now Optional */}
+          <div className={`flex items-center px-3 py-1.5 rounded-xl backdrop-blur-md border ${
+            isDark ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm'
+          }`}>
+            <span className="text-[9px] uppercase tracking-tighter text-zinc-500 mr-2">
+              {postPin.length === 4 ? '🔒' : '♾️'} PIN:
+            </span>
+<input 
+  type="password"
+  maxLength={4}
+  value={postPin}
+  onChange={(e) => setPostPin(e.target.value.replace(/\D/g, ""))}
+  placeholder="4-digits" // Changed from "Optional" to be clearer
+  className={`bg-transparent w-16 text-xs outline-none font-mono tracking-widest text-center ${
+    postPin.length > 0 && postPin.length < 4 ? 'text-red-500' : 'text-inherit'
+  }`}
+/>
+          </div>
         </div>
       )}
 
@@ -272,6 +254,14 @@ export default function BottomDock({
                 ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' 
                 : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'
             } disabled:opacity-20 disabled:cursor-not-allowed`}
+            title={
+              !inputText.trim() ? "Enter a message" :
+              inputText.trim().length < 3 ? "Message too short (min 3 chars)" :
+              !captchaToken ? "Complete the captcha first" :
+              cooldown > 0 ? `Wait ${cooldown}s` :
+              !useCurrentLocation && !selectedLocation ? "Select a location" :
+              "Ready to post!"
+            }
           >
             {isPosting ? '...' : cooldown > 0 ? `${cooldown}s` : 'Post'}
           </button>
