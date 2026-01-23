@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
   import { formatRelativeTime } from "../utils/timeUtils";
   import { Turnstile } from '@marsidev/react-turnstile';
   import ListeningButton from "./ListeningButton";
+  import { checkText } from "../utils/wordFilter";
 import L from 'leaflet';
   import DeleteSecretModal from './DeleteSecretModal';
 export default function MapMarkers({
@@ -30,7 +31,7 @@ export default function MapMarkers({
     const scrollRef = useRef(null);
     const popupRef = useRef(null);
     const markerRefs = useRef({});
-
+const [whisperError, setWhisperError] = useState(null);
 const whisperTurnstileRef = useRef(null);
     // Track bounds in state (optimized)
     const [bounds, setBounds] = useState(() => map.getBounds());
@@ -551,45 +552,66 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
         />
       </div>
 
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Whisper a reply..."
-          className={`flex-1 border rounded-lg px-3 py-1.5 text-[10px] outline-none ${
-            isDark
-              ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
-              : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
-          }`}
-          value={whisperInputs[currentSecret.id] || ""}
-          onChange={(e) =>
-            setWhisperInputs((prev) => ({
-              ...prev,
-              [currentSecret.id]: e.target.value,
-            }))
-          }
-          onTouchStart={(e) => e.stopPropagation()}
-        />
-        <button
-          onClick={() => {
-            const inputValue = whisperInputs[currentSecret.id]?.trim();
-            // 🛡️ BLOCK IF NO CAPTCHA TOKEN
-            if (inputValue && whisperCaptchaToken) {
-              onWhisper(currentSecret.id, inputValue, whisperCaptchaToken);
-              setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
-              setWhisperCaptchaToken(null); // Clear for next use
+  
+
+        {/* Display the error message if profanity is detected */}
+        {whisperError && (
+          <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse mb-1 block text-center">
+            {whisperError}
+          </span>
+        )}
+        
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Whisper a reply..."
+            className={`flex-1 border rounded-lg px-3 py-1.5 text-[10px] outline-none ${
+              isDark
+                ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
+                : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
+            }`}
+            value={whisperInputs[currentSecret.id] || ""}
+            onChange={(e) =>
+              setWhisperInputs((prev) => ({
+                ...prev,
+                [currentSecret.id]: e.target.value,
+              }))
             }
-          }}
-          disabled={!whisperCaptchaToken}
-          className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
-            !whisperCaptchaToken ? "opacity-20 cursor-not-allowed" : ""
-          } ${
-            isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
-          }`}
-        >
-          Reply
-        </button>
+          />
+          <button
+            onClick={() => {
+              const inputValue = whisperInputs[currentSecret.id]?.trim();
+        
+      // 1. Security Check
+      if (!whisperCaptchaToken) return;
+
+      if (inputValue) {
+        // 2. Profanity Check
+        const filterResult = checkText(inputValue);
+        if (filterResult.isProfane) {
+          setWhisperError("The void rejects this language");
+          setTimeout(() => setWhisperError(null), 3000); 
+          return; // Stop execution
+        }
+
+        // 3. Success - Send to Database
+        onWhisper(currentSecret.id, inputValue, whisperCaptchaToken);
+        setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
+        setWhisperCaptchaToken(null); 
+      }
+    }}
+    disabled={!whisperCaptchaToken || !whisperInputs[currentSecret.id]?.trim()}
+    className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
+      !whisperCaptchaToken ? "opacity-20 cursor-not-allowed" : ""
+    } ${
+      isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
+    }`}
+  >
+    Reply
+  </button>
+</div>
       </div>
-    </div>
+
   ) : (
     <div className={`py-2 px-3 rounded-lg border text-center ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
       <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
