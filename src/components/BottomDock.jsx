@@ -3,6 +3,7 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { generateFingerprint, logAction } from "../utils/antiSpam";
 import { checkForCrisisLanguage } from '../utils/mentalHealthDetector';
 import L from 'leaflet';
+import { checkText } from "../utils/wordFilter";
 
 export default function BottomDock({ 
   onAboutClick, 
@@ -70,6 +71,13 @@ export default function BottomDock({
       if (trimmedText.length < MIN_TEXT_LENGTH) {
         throw new Error(`Message must be at least ${MIN_TEXT_LENGTH} characters.`);
       }
+
+      // --- ADD THE PROFANITY CHECK HERE ---
+    const filterResult = checkText(trimmedText);
+    if (filterResult.isProfane) {
+      // This stops the function and shows the error to the user
+      throw new Error(`The void rejects this language. (${filterResult.count} forbidden word(s) detected)`);
+    }
 
       // 2. Mental Health Check
       const crisisCheck = checkForCrisisLanguage(trimmedText);
