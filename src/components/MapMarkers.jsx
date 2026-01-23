@@ -1,4 +1,4 @@
-  import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
   import { Marker, Popup, useMap } from "react-leaflet";
   import { getMemoryIcon } from "../MapConfig";
   import { formatRelativeTime } from "../utils/timeUtils";
@@ -478,7 +478,7 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
                         </span>
 
                         <div
-                          className={`min-h-[60px] max-h-[80px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar`}
+                          className={`min-h-[60px] max-h-[120px] overflow-y-auto overflow-x-hidden mb-6 px-4 custom-scrollbar`}
                           style={{ 
                             overscrollBehavior: 'contain',
                             WebkitOverflowScrolling: 'touch'
@@ -493,10 +493,10 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
                           </p>
                         </div>
 
-              <div className="mb-4 px-2">
+              <div className="px-2">
   <div
     ref={scrollRef}
-    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
+    className={`max-h-22 overflow-y-auto overflow-x-hidden mb-1.5 p-2 rounded-xl border text-left flex flex-col custom-scrollbar ${
       isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"
     }`}
     style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
@@ -505,8 +505,8 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
     onTouchMove={(e) => e.stopPropagation()}
     onMouseDown={(e) => e.stopPropagation()}
   >
-    <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
-      Whisper Thread ({replyCount}/10)
+<p className="text-[8px] uppercase tracking-widest pt-2 opacity-40 top-0 bg-inherit z-10 py-1 mb-2">
+        Whisper Thread ({replyCount}/10)
     </p>
 
     {/* Original whisper */}
@@ -540,7 +540,7 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
     <div className="flex flex-col gap-2">
       
       {/* 🔒 SILENT CAPTCHA LAYER */}
-      <div className="flex justify-center scale-[0.65] origin-center h-8 overflow-hidden">
+      <div className="flex justify-center scale-[0.65] origin-center h-2 overflow-hidden">
         <Turnstile 
           siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
           options={{
@@ -555,7 +555,7 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
         <input
           type="text"
           placeholder="Whisper a reply..."
-          className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
+          className={`flex-1 border rounded-lg px-3 py-1.5 text-[10px] outline-none ${
             isDark
               ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
               : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
