@@ -7,7 +7,7 @@ export default function NotificationBell({ isDark, secrets, onNotificationClick 
 
   // Sync notifications whenever the secrets list changes
   useEffect(() => {
-    console.log("🔔 Bell: Checking for notifications...", secrets.length);
+
     checkForNewReplies();
   }, [secrets]);
 
@@ -26,23 +26,21 @@ const checkForNewReplies = () => {
   // Get IDs of secrets you REPLIED to
   const commentedSecrets = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
   
-  console.log("🔔 My secrets:", mySecrets);
-  console.log("🔔 Commented secrets:", commentedSecrets);
+
   
   // Combine them into one unique list of "Watched" IDs
   const watchedIds = [...new Set([...mySecrets, ...commentedSecrets])];
   
-  console.log("🔔 Watching IDs:", watchedIds);
 
   if (watchedIds.length === 0) {
-    console.log("🔔 No watched secrets");
+
     setAllNotifications([]);
     setUnreadCount(0);
     return;
   }
 
   const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");
-  console.log("🔔 Last seen counts:", lastSeenCounts);
+
   
   const allUpdates = [];
   let unreadSecretCount = 0;
@@ -50,10 +48,8 @@ const checkForNewReplies = () => {
   watchedIds.forEach(secretId => {
     const secret = secrets.find(s => s.id === secretId);
     
-    console.log(`🔔 Checking secret ${secretId}:`, secret);
     
     if (!secret) {
-      console.log(`🔔 Secret ${secretId} not found in list`);
       return;
     }
     
@@ -61,10 +57,8 @@ const checkForNewReplies = () => {
     const replies = Array.isArray(secret.replies) ? secret.replies : [];
     const currentReplyCount = replies.length;
     
-    console.log(`🔔 Secret ${secretId} has ${currentReplyCount} replies:`, replies);
 
     if (currentReplyCount === 0) {
-      console.log(`🔔 Secret ${secretId} has no replies yet`);
       return;
     }
 
@@ -89,7 +83,6 @@ const checkForNewReplies = () => {
     
     const isUnread = currentReplyCount > lastSeenCount;
     
-    console.log(`🔔 Secret ${secretId}: current=${currentReplyCount}, lastSeen=${lastSeenCount}, isUnread=${isUnread}`);
     
     // Label based on whether you own the post or just joined the thread
     const notificationType = isMyPost ? "Your Post" : "Joined Thread";
@@ -109,8 +102,7 @@ const checkForNewReplies = () => {
     if (isUnread) unreadSecretCount++;
   });
 
-  console.log("🔔 Total notifications:", allUpdates.length);
-  console.log("🔔 Unread count:", unreadSecretCount);
+
 
   // Sort: Unread first, then by most recent date
   const sortedUpdates = allUpdates.sort((a, b) => {

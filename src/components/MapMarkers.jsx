@@ -2,31 +2,36 @@
   import { Marker, Popup, useMap } from "react-leaflet";
   import { getMemoryIcon } from "../MapConfig";
   import { formatRelativeTime } from "../utils/timeUtils";
+  import { Turnstile } from '@marsidev/react-turnstile';
   import ListeningButton from "./ListeningButton";
-  import L from "leaflet";
+import L from 'leaflet';
   import DeleteSecretModal from './DeleteSecretModal';
-  export default function MapMarkers({
-    secrets,
-    visited,
-    isDark,
-    onMarkAsVisited,
-    onNod,
-    onWhisper,
-    onDelete,
-    activeSecretId, 
-    setActiveSecretId,
-  }) {
-    const [whisperInput, setWhisperInput] = useState("");
+export default function MapMarkers({
+  secrets,
+  visited,
+  isDark,
+  onMarkAsVisited,
+  onNod,
+  onWhisper,
+  onDelete,
+  activeSecretId, 
+  setActiveSecretId,
+  onToggleListening
+}) {
+     const [whisperInputs, setWhisperInputs] = useState({});
+
     const [threadIndices, setThreadIndices] = useState({});
     const [zoomLevel, setZoomLevel] = useState(4);
     const [activePopupId, setActivePopupId] = useState(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [secretToDelete, setSecretToDelete] = useState(null);
+  const [whisperCaptchaToken, setWhisperCaptchaToken] = useState(null);
     const map = useMap();
     const scrollRef = useRef(null);
     const popupRef = useRef(null);
     const markerRefs = useRef({});
 
+const whisperTurnstileRef = useRef(null);
     // Track bounds in state (optimized)
     const [bounds, setBounds] = useState(() => map.getBounds());
 
@@ -100,16 +105,17 @@
       let lastUpdate = 0;
       const THROTTLE_MS = 100;
       
-      const updateViewport = () => {
-        const now = Date.now();
-        if (now - lastUpdate < THROTTLE_MS) return;
-        
-        lastUpdate = now;
-        frameId = requestAnimationFrame(() => {
-          setBounds(map.getBounds());
-          setZoomLevel(map.getZoom());
-        });
-      };
+const updateViewport = () => {
+  const now = Date.now();
+  if (now - lastUpdate < THROTTLE_MS) return;
+  
+  lastUpdate = now;
+  frameId = requestAnimationFrame(() => {
+    // .pad(0.5) ensures markers just off-screen are still loaded
+    setBounds(map.getBounds().pad(0.5)); 
+    setZoomLevel(map.getZoom());
+  });
+};
 
       map.on("moveend", updateViewport); 
       map.on("zoomend", updateViewport);
@@ -303,6 +309,14 @@
       }
     };
 
+
+
+    const setWhisperInputFor = (id, value) => {
+    setWhisperInputs(prev => ({
+      ...prev,
+      [id]: value,
+    }));
+  };
     return (
       <>
         {clusteredMarkers.map((cluster, idx) => {
@@ -345,18 +359,19 @@
           const isMySecret = mySecrets.includes(s.id);
 
           return (
-            <Marker
-              key={s.id}
-              position={[s.lat, s.lng]}
-              ref={(el) => {
-                if (el) markerRefs.current[s.id] = el;
-              }}
-              icon={getMemoryIcon(
-                s.is_listening,
-                isVisited,
-                weight,
-                isDark
-              )}
+<Marker
+    // Add s.is_listening to the key here
+    key={`${s.id}-${s.is_listening}`} 
+    position={[s.lat, s.lng]}
+    ref={(el) => {
+      if (el) markerRefs.current[s.id] = el;
+    }}
+    icon={getMemoryIcon(
+      s.is_listening,
+      isVisited,
+      weight,
+      isDark
+    )}
               eventHandlers={{
                 click: () => {
                   onMarkAsVisited(s.id);
@@ -364,13 +379,15 @@
                 },
               }}
             >
-              <Popup
-                ref={popupRef}
-                maxWidth={240}
-                minWidth={240}
-                maxHeight={500}
-                onClose={() => {
-                  setWhisperInput("");
+             <Popup
+  ref={popupRef}
+  maxWidth={240}
+  minWidth={240}
+  maxHeight={500}
+  key={`popup-${s.id}-${JSON.stringify(secrets.find(sec => sec.id === s.id)?.replies || [])}`}
+  onClose={() => {
+                  setWhisperInputs({}); 
+                  
                   setActivePopupId(null);
                 }}
                 autoPan={false} 
@@ -404,10 +421,9 @@
 
   const currentIndex = getActiveIndex(s.id);
   
-  // 2. CRITICAL FIX: Find the LATEST data from the global 'secrets' prop 
-  // instead of just using the one from the filtered list.
-  const baseSecret = secretsAtLocation[currentIndex] || s;
-  const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecret;
+const baseSecret = secretsAtLocation[currentIndex] || s;
+const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecret;
+
   
   const replyCount = getReplyCount(currentSecret);
 
@@ -477,98 +493,111 @@
                           </p>
                         </div>
 
-                        <div className="mb-4 px-2">
-                          <div
-                            ref={scrollRef}
-                            className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
-                              isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"
-                            }`}
-                            style={{ 
-                              overscrollBehavior: 'contain',
-                              WebkitOverflowScrolling: 'touch'
-                            }}
-                            onWheel={(e) => e.stopPropagation()}
-                            onTouchStart={(e) => e.stopPropagation()}
-                            onTouchMove={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
-                            <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
-                              Whisper Thread ({replyCount}/10)
-                            </p>
-
-                        {currentSecret.whispers && (
-  <div className="border-b border-white/5 pb-2">
-    <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
-      "{currentSecret.whispers}"
+              <div className="mb-4 px-2">
+  <div
+    ref={scrollRef}
+    className={`max-h-24 overflow-y-auto overflow-x-hidden mb-2 p-2 rounded-xl border text-left flex flex-col gap-3 custom-scrollbar ${
+      isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-100"
+    }`}
+    style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
+    onWheel={(e) => e.stopPropagation()}
+    onTouchStart={(e) => e.stopPropagation()}
+    onTouchMove={(e) => e.stopPropagation()}
+    onMouseDown={(e) => e.stopPropagation()}
+  >
+    <p className="text-[8px] uppercase tracking-widest pt-0 opacity-40 top-0 bg-inherit z-10 py-1">
+      Whisper Thread ({replyCount}/10)
     </p>
-    <span className="text-[7px] uppercase opacity-30 mt-1 block">Original Whisper</span>
-  </div>
-)}
 
-{(() => {
-  // Use useMemo style logic or ensure safeReplies is always derived from the latest currentSecret
-  let safeReplies = [];
-  try {
-    const rawReplies = currentSecret.replies;
-    safeReplies = Array.isArray(rawReplies) 
-      ? rawReplies 
-      : JSON.parse(rawReplies || "[]");
-  } catch (e) { safeReplies = []; }
-
-  return safeReplies.length > 0 ? (
-    safeReplies.map((reply, index) => (
-      // Use a unique ID if available, otherwise index is okay here
-      <div key={`reply-${currentSecret.id}-${index}`} className="border-b border-white/5 last:border-0 pb-2">
+    {/* Original whisper */}
+    {currentSecret.whispers && (
+      <div className="border-b border-white/5 pb-2">
         <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
-          "{reply.text || (typeof reply === 'string' ? reply : '')}"
+          "{currentSecret.whispers}"
         </p>
         <span className="text-[7px] uppercase opacity-30 mt-1 block">
-          {reply.created_at ? formatRelativeTime(reply.created_at) : "recently"}
+          Original Whisper
         </span>
       </div>
-    ))
-  ) : null;
-})()}
-                          </div>
+    )}
 
-                          {replyCount < 10 ? (
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="Whisper a reply..."
-                                className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
-                                  isDark
-                                    ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
-                                    : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
-                                }`}
-                                value={whisperInput}
-                                onChange={(e) => setWhisperInput(e.target.value)}
-                                onTouchStart={(e) => e.stopPropagation()}
-                              />
-                              <button
-                                onClick={() => {
-                                  if (whisperInput.trim() && replyCount < 10) {
-                                    onWhisper(currentSecret.id, whisperInput);
-                                    setWhisperInput("");
-                                  }
-                                }}
-                                className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
-                                  isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
-                                }`}
-                              >
-                                Reply
-                              </button>
-                            </div>
-                          ) : (
-                            <div className={`py-2 px-3 rounded-lg border text-center ${
-                              isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"
-                            }`}>
-                              <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
-                                This thread has reached its limit
-                              </p>
-                            </div>
-                          )}
-                        </div>
+    {/* Replies */}
+    {Array.isArray(currentSecret.replies) &&
+      currentSecret.replies.map((reply, index) => (
+        <div key={`reply-${currentSecret.id}-${index}`} className="border-b border-white/5 last:border-0 pb-2">
+          <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
+            "{reply.text || (typeof reply === "string" ? reply : "")}"
+          </p>
+          <span className="text-[7px] uppercase opacity-30 mt-1 block">
+            {reply.created_at ? formatRelativeTime(reply.created_at) : "recently"}
+          </span>
+        </div>
+      ))}
+  </div>
+
+  {/* Whisper input */}
+  {replyCount < 10 ? (
+    <div className="flex flex-col gap-2">
+      
+      {/* 🔒 SILENT CAPTCHA LAYER */}
+      <div className="flex justify-center scale-[0.65] origin-center h-8 overflow-hidden">
+        <Turnstile 
+          siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
+          options={{
+            appearance: 'interaction-only', 
+          }}
+          onSuccess={(token) => setWhisperCaptchaToken(token)}
+          theme={isDark ? 'dark' : 'light'}
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Whisper a reply..."
+          className={`flex-1 border rounded-lg px-4 py-2 text-[10px] outline-none ${
+            isDark
+              ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
+              : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
+          }`}
+          value={whisperInputs[currentSecret.id] || ""}
+          onChange={(e) =>
+            setWhisperInputs((prev) => ({
+              ...prev,
+              [currentSecret.id]: e.target.value,
+            }))
+          }
+          onTouchStart={(e) => e.stopPropagation()}
+        />
+        <button
+          onClick={() => {
+            const inputValue = whisperInputs[currentSecret.id]?.trim();
+            // 🛡️ BLOCK IF NO CAPTCHA TOKEN
+            if (inputValue && whisperCaptchaToken) {
+              onWhisper(currentSecret.id, inputValue, whisperCaptchaToken);
+              setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
+              setWhisperCaptchaToken(null); // Clear for next use
+            }
+          }}
+          disabled={!whisperCaptchaToken}
+          className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
+            !whisperCaptchaToken ? "opacity-20 cursor-not-allowed" : ""
+          } ${
+            isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
+          }`}
+        >
+          Reply
+        </button>
+      </div>
+    </div>
+  ) : (
+    <div className={`py-2 px-3 rounded-lg border text-center ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
+      <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
+        This thread has reached its limit
+      </p>
+    </div>
+  )}
+</div>
 
                         <div
                           className={`flex flex-col items-center border-t pt-4 ${
@@ -606,63 +635,52 @@
                               {visited.includes(currentSecret.id) ? "Heard" : "Unheard"}
                             </span>
                           </div>
-                          
-                          <ListeningButton
-                            key={`listening-${currentSecret.id}-${currentSecret.is_listening}`}
-                            id={currentSecret.id}
-                            isListening={currentSecret.is_listening}
-                          />
-
-      {mySecrets.includes(currentSecret.id) && (
-    <>
-  {/* CHANGE THIS LINE */}
-  {currentSecret.post_pin && (
-    <>
+<ListeningButton
+    key={`listening-${currentSecret.id}`}
+    id={currentSecret.id}
+    isDark={isDark}
+    onToggle={(isNowListening) => {
+      // 1. Update local reference for the current render frame
+      currentSecret.is_listening = isNowListening;
+      
+      // 2. Update global state so the Marker Icon changes
+      onToggleListening(currentSecret.id, isNowListening);
+      
+      // 3. Keep popup state active
+      setActivePopupId(currentSecret.id); 
+    }}
+  />
+{/* 1. Only check if it's the user's secret */}
+{/* 1. Only check if it's the user's secret */}
+{mySecrets.includes(currentSecret.id) && (
+  <div className="w-full mt-2">
+    {/* 2. Check if a PIN exists. If post_pin is null/empty, it's permanent */}
+    {currentSecret.post_pin ? (
       <button
-        onClick={() => {
-          setSecretToDelete(currentSecret.id);
-          setDeleteModalOpen(true);
+        onClick={(e) => {
+          e.stopPropagation();
+          // This triggers the DeleteConfirmationModal in App.jsx
+          onDelete(currentSecret.id); 
         }}
-        className={`mt-2 w-full py-2 rounded-lg text-[8px] font-bold uppercase tracking-[0.3em] transition-all opacity-40 hover:opacity-100 flex items-center justify-center gap-2 ${
+        className={`w-full py-2 rounded-lg text-[8px] font-bold uppercase tracking-[0.3em] transition-all opacity-40 hover:opacity-100 flex items-center justify-center gap-2 ${
           isDark ? "text-red-400/50 hover:text-red-400" : "text-red-500"
         }`}
       >
         Release this secret
       </button>
-      
-      <DeleteSecretModal
-        isOpen={deleteModalOpen && secretToDelete === currentSecret.id}
-        onClose={() => {
-          setDeleteModalOpen(false);
-          setSecretToDelete(null);
-        }}
-        onConfirm={(pin) => {
-          onDelete(currentSecret.id, pin);
-          setDeleteModalOpen(false);
-          setSecretToDelete(null);
-          map.closePopup();
-        }}
-        isDark={isDark}
-      />
-    </>
-  )}
-      
-      <DeleteSecretModal
-        isOpen={deleteModalOpen && secretToDelete === currentSecret.id}
-        onClose={() => {
-          setDeleteModalOpen(false);
-          setSecretToDelete(null);
-        }}
-        onConfirm={(pin) => {
-          onDelete(currentSecret.id, pin);
-          setDeleteModalOpen(false);
-          setSecretToDelete(null);
-          map.closePopup();
-        }}
-        isDark={isDark}
-      />
-    </>
-  )}
+    ) : (
+      <div className="py-2 text-center animate-pulse">
+        <span className={`text-[7px] uppercase tracking-[0.4em] font-light ${
+          isDark ? "text-zinc-600" : "text-zinc-400"
+        }`}>
+          This silence is permanent
+        </span>
+      </div>
+    )}
+  </div>
+)}
+
+
                         </div>
                       </>
                     );

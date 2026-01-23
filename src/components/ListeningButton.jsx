@@ -1,71 +1,52 @@
-  import React, { useState, useEffect } from 'react';
-  import { supabase } from '../supabaseClient';
+import React, { useState, useEffect } from 'react';
 
-  export default function ListeningButton({ id, isDark }) {
-    const [isCurrentlyListening, setIsCurrentlyListening] = useState(false);
+const ListeningButton = ({ id, onToggle, isDark }) => {
+  const [isListening, setIsListening] = useState(false);
 
-    // Check LocalStorage to see if THIS user is already one of the listeners
-    useEffect(() => {
-      const myListeners = JSON.parse(localStorage.getItem('my_active_listens') || '[]');
-      setIsCurrentlyListening(myListeners.includes(id));
-    }, [id]);
+  // 1. Run the check inside useEffect so it doesn't happen DURING render
+  useEffect(() => {
+    const saved = localStorage.getItem('listening_secrets') || '[]';
+    const listeningList = JSON.parse(saved);
+    const currentlyListening = listeningList.includes(id);
+    
+    setIsListening(currentlyListening);
+    
+    // Only notify the parent if they are actually listening
+    if (currentlyListening) {
+      onToggle(true);
+    }
+  }, [id]); // This ensures it runs safely after the button mounts
 
-    const toggleListen = async () => {
-      const myListeners = JSON.parse(localStorage.getItem('my_active_listens') || '[]');
-      let newList;
-      let incrementValue;
+  const handleToggle = () => {
+    const saved = localStorage.getItem('listening_secrets') || '[]';
+    let listeningList = JSON.parse(saved);
+    let newState;
 
-      if (isCurrentlyListening) {
-        // 1. User wants to STOP
-        newList = myListeners.filter(itemId => itemId !== id);
-        incrementValue = -1;
-      } else {
-        // 2. User wants to START
-        newList = [...myListeners, id];
-        incrementValue = 1;
+    if (isListening) {
+      listeningList = listeningList.filter(item => item !== id);
+      newState = false;
+    } else {
+      listeningList.push(id);
+      newState = true;
+    }
 
-        // Auto-off timer (5 mins)
-        setTimeout(() => {
-          const checkStillActive = JSON.parse(localStorage.getItem('my_active_listens') || '[]');
-          if (checkStillActive.includes(id)) toggleListen();
-        }, 5 * 60 * 1000);
-      }
+    localStorage.setItem('listening_secrets', JSON.stringify(listeningList));
+    setIsListening(newState);
+    onToggle(newState); // Parent update is safe here because it's an event
+  };
 
-      // UPDATE DATABASE (Global)
-      // We fetch current count first to calculate new state
-      const { data } = await supabase
-        .from('unspoken_words')
-        .select('listener_count')
-        .eq('id', id)
-        .single();
+  return (
+    <button
+      onClick={handleToggle}
+      className={`w-full py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+        isListening 
+          ? 'bg-orange-600 text-white shadow-[0_0_15px_rgba(234,88,12,0.4)]' 
+          : isDark ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+      }`}
+    >
+      {isListening ? "🧡 You are Listening" : "👂 Listen to this Heart"}
+    </button>
+  );
+};
 
-      const newCount = Math.max(0, (data?.listener_count || 0) + incrementValue);
-
-      await supabase
-        .from('unspoken_words')
-        .update({ 
-          listener_count: newCount,
-          is_listening: newCount > 0 // Pulse globally if at least 1 person is listening
-        })
-        .eq('id', id);
-
-      // UPDATE LOCAL STATE (Device specific)
-      localStorage.setItem('my_active_listens', JSON.stringify(newList));
-      setIsCurrentlyListening(!isCurrentlyListening);
-    };
-
-    return (
-      <button 
-        onClick={toggleListen}
- className={`w-full py-3 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all duration-500 ${
-  isCurrentlyListening 
-    ? 'bg-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.5)] animate-pulse' 
-    : isDark
-      ? 'bg-white/5 text-zinc-500 border border-white/10 hover:bg-white/20' // Dark Mode
-      : 'bg-black/5 text-zinc-600 border border-black/5 hover:bg-black/10'  // Light Mode Fix
-}`}
-      >
-        {isCurrentlyListening ? "❤ You are listening" : "Listen to this heart"}
-      </button>
-    );
-  }
+export default ListeningButton;

@@ -1,30 +1,33 @@
-// antiSpam.js
+// antiSpam.js - Privacy-Friendly Version
 
 export const generateFingerprint = async () => {
-  const components = [];
-  components.push(screen.width, screen.height, screen.colorDepth, window.devicePixelRatio);
-  components.push(new Date().getTimezoneOffset());
-  components.push(navigator.language, navigator.platform);
-  components.push(navigator.hardwareConcurrency || 0);
+  try {
+    const components = [];
 
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.textBaseline = 'top';
-  ctx.font = '14px Arial';
-  ctx.fillText('sulyap', 2, 2);
-  components.push(canvas.toDataURL());
-
-  const gl = canvas.getContext('webgl');
-  if (gl) {
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    if (debugInfo) {
-      components.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
-      components.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+    // 1. Only use standard, public browser settings
+    // These are things every website sees automatically
+    components.push(navigator.userAgent || 'unknown');
+    components.push(navigator.language || 'unknown');
+    components.push(screen.width + "x" + screen.height);
+    
+    // 2. Use a "Session Salt" 
+    // This makes the ID change if they close the browser and come back later
+    // This is MUCH more private than a permanent ID
+    let sessionSalt = sessionStorage.getItem('sulyap_id');
+    if (!sessionSalt) {
+      sessionSalt = Math.random().toString(36).substring(2);
+      sessionStorage.setItem('sulyap_id', sessionSalt);
     }
-  }
+    components.push(sessionSalt);
 
-  const fingerprint = await hashString(components.join('|||'));
-  return fingerprint;
+    // 3. Turn it into a random-looking string (Hash)
+    // This makes the data unreadable to humans
+    const fingerprint = await hashString(components.join('|'));
+    
+    return fingerprint;
+  } catch (error) {
+    return "anonymous-" + Math.random().toString(36).substring(2, 9);
+  }
 };
 
 const hashString = async (str) => {
@@ -32,54 +35,12 @@ const hashString = async (str) => {
   const data = encoder.encode(str);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
 };
 
-// REPLACE YOUR checkRateLimit WITH THIS:
-export const checkRateLimit = async (supabase, fingerprint, actionType) => {
-  const limits = {
-    post: { maxActions: 20, windowMinutes: 60 },
-    whisper: { maxActions: 30, windowMinutes: 60 },
-    nod: { maxActions: 100, windowMinutes: 60 }
-  };
-
-  const limit = limits[actionType];
-  if (!limit) return { allowed: true };
-
-  const windowStart = new Date(Date.now() - limit.windowMinutes * 60 * 1000).toISOString();
-
-  const { data: recentActions, error } = await supabase
-    .from('rate_limits')
-    .select('id, created_at')
-    .eq('fingerprint', fingerprint)
-    .eq('action_type', actionType)
-    .gte('created_at', windowStart);
-
-  if (error) return { allowed: true };
-
-  const actionCount = recentActions?.length || 0;
-
-  if (actionCount >= limit.maxActions) {
-    const oldestAction = recentActions.sort((a, b) => 
-      new Date(a.created_at) - new Date(b.created_at)
-    )[0];
-    
-    const resetTime = new Date(new Date(oldestAction.created_at).getTime() + limit.windowMinutes * 60 * 1000);
-    const minutesRemaining = Math.ceil((resetTime - new Date()) / 60000);
-    
-    return {
-      allowed: false,
-      reason: `Try again in ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''}.`
-    };
-  }
-  
-  return { allowed: true, remaining: limit.maxActions - actionCount };
+// UX-only rate limit (No data sent to server)
+export const logAction = (actionType) => {
+  const key = `last_${actionType}`;
+  localStorage.setItem(key, Date.now().toString());
 };
-
-export const logAction = async (supabase, fingerprint, actionType, userAgent) => {
-  await supabase.from('rate_limits').insert({
-    fingerprint,
-    action_type: actionType,
-    user_agent: userAgent
-  });
-};
+export const checkRateLimitClientSide = () => ({ allowed: true });

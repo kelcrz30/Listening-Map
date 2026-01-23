@@ -7,10 +7,25 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Standard Node/Build folders
 node_modules
 dist
 dist-ssr
 *.local
+
+# Local env files (CRITICAL)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Vite / Build outputs
+.vite
+.cache
+
+# Supabase local development
+.supabase/
 
 # Editor directories and files
 .vscode/*

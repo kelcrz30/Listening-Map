@@ -5,10 +5,7 @@ import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
 import { checkText } from "./utils/wordFilter";
-import SecretHeaderCard from "./components/SecretHeaderCard";
 import WorldLabel from "./components/WorldLabel";
-import { generateFingerprint, checkRateLimit, logAction } from "./utils/antiSpam";
-// Components
 import Atmosphere from "./components/Atmosphere";
 import Constellations from "./components/Constellations";
 import MapController from "./components/MapController";
@@ -33,6 +30,7 @@ import DonationModal from "./components/DonationModal";
 import NotificationBell from "./components/NotificationBell";
 import MentalHealthModal from './components/MentalHealthModal';
 import { checkForCrisisLanguage } from './utils/mentalHealthDetector';
+import { generateFingerprint, checkRateLimitClientSide, logAction } from "./utils/antiSpam";
 
 export default function App() {
   return (
@@ -63,89 +61,143 @@ function AppContent() {
   const [activeSecretId, setActiveSecretId] = useState(null);
   const [onlineCount, setOnlineCount] = useState(1);
   const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
-
+const [isDeleting, setIsDeleting] = useState(false);
   // --- DATABASE & REALTIME LOGIC ---
   useEffect(() => {
+    
     const fetchSecrets = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('unspoken_words')
-        .select('*, post_pin')
+        .select('*')
+        .eq('is_visible', true)
         .order('created_at', { ascending: false })
         .limit(500);
       
-      if (data) setSecrets(data);
+      if (error) {
+        console.error('❌ [FETCH] Error:', error);
+      } else {
+
+        setSecrets(data || []);
+      }
     };
-    
+      
     fetchSecrets();
 
     const sessionUserId = `user-${Math.random().toString(36).substr(2, 9)}`;
+    
     const channel = supabase.channel('global_presence', {
-      config: { presence: { key: sessionUserId } }
+      config: { 
+        presence: { key: sessionUserId }
+      }
     });
 
     channel
       .on('presence', { event: 'sync' }, () => {
-        const newState = channel.presenceState();
-        setOnlineCount(Object.keys(newState).length); 
+        const count = Object.keys(channel.presenceState()).length;
+        setOnlineCount(count); 
       })
- .on('postgres_changes', {
-  event: '*',
-  schema: 'public',
-  table: 'unspoken_words'
-}, (payload) => {
-  console.log("📡 Realtime event:", payload.eventType, payload);
-  
-  // --- HANDLE NEW SECRETS ---
-  if (payload.eventType === 'INSERT') {
-    setSecrets((prev) => {
-      const alreadyExists = prev.some(s => s.id === payload.new.id);
-      if (alreadyExists) return prev; 
-      return [payload.new, ...prev];
-    });
-    setNotification("A new heart has shared a secret...");
-    setTimeout(() => setNotification(null), 4000);
-  }
-  
-if (payload.eventType === 'UPDATE') {
-  setSecrets((prev) => prev.map(s => 
-    // This merges the old secret 's' with the new changes in 'payload.new'
-    s.id === payload.new.id ? { ...s, ...payload.new } : s
-  ));
-  
-  // Logic for your own secret notifications
-  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-  if (mySecrets.includes(payload.new.id)) {
-    setNotification("Someone whispered back to your secret...");
-  }
-}
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'unspoken_words'
+      }, (payload) => {
+        
+        // --- HANDLE NEW POSTS ---
+        if (payload.eventType === 'INSERT') {
+          const completePost = {
+            ...payload.new,
+            nods: payload.new.nods ?? 0,
+            replies: Array.isArray(payload.new.replies) ? payload.new.replies : [],
+            created_at: payload.new.created_at || new Date().toISOString()
+          };
 
-  // --- HANDLE DELETIONS ---
-  if (payload.eventType === 'DELETE') {
-    setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
-  }
-})
+          // Validate required fields
+          if (!completePost.text || completePost.lat === undefined || completePost.lng === undefined) {
+            console.error('❌ [INSERT] Missing fields:', completePost);
+            return;
+          }
+
+          if (completePost.is_visible !== false) {
+            setSecrets((prev) => {
+              if (prev.some(s => s.id === completePost.id)) {
+                return prev;
+              }
+              return [completePost, ...prev];
+            });
+            
+            setNotification("A new heart has shared a secret...");
+            setTimeout(() => setNotification(null), 4000);
+          }
+        }
+        
+        // --- HANDLE UPDATES (replies, nods, is_listening) ---
+        if (payload.eventType === 'UPDATE') {
+          
+          setSecrets((prev) => {
+            return prev.map(s => {
+              if (s.id !== payload.new.id) return s;
+              
+              // Merge old data with new, ensuring we keep all fields
+              return {
+                ...s,
+                ...payload.new,
+                nods: payload.new.nods ?? s.nods ?? 0,
+                replies: Array.isArray(payload.new.replies) ? payload.new.replies : (s.replies || []),
+                is_listening: payload.new.is_listening ?? s.is_listening ?? false
+              };
+            }).filter(s => s.is_visible !== false);
+          });
+          
+          // Check if this is our post and notify
+          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+          if (mySecrets.includes(payload.new.id)) {
+            setNotification("Someone whispered back to your secret...");
+            setTimeout(() => setNotification(null), 4000);
+          }
+        }
+
+        // --- HANDLE DELETIONS ---
+        if (payload.eventType === 'DELETE') {
+          setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
+        }
+      })
       .subscribe(async (status) => {
+        
         if (status === 'SUBSCRIBED') {
           await channel.track({ online_at: new Date().toISOString() });
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Channel error');
         }
       });
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // --- ACTION HANDLERS ---
+  const handleNewPostSuccess = (newPost) => {
+    
+    setSecrets((prev) => {
+      if (prev.some(s => s.id === newPost.id)) {
+        return prev;
+      }
+      return [newPost, ...prev];
+    });
 
-const handleNewPostSuccess = (newPost) => {
+    setTargetPos([newPost.lat, newPost.lng]);
     setNotification("Your secret has been shared with the world.");
     setSelectedLocation(null);
     setIsPlacementMode(false);
 
-    // Store the post ID so we can track replies to it
     const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newPost.id]));
+    if (!mySecrets.includes(newPost.id)) {
+      localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newPost.id]));
+    }
 
     setTimeout(() => setNotification(null), 3000);
   };
+
   const triggerNodPulse = () => {
     setIsNodding(true);
     if (navigator.vibrate) navigator.vibrate(50);
@@ -187,147 +239,131 @@ const handleNewPostSuccess = (newPost) => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleNod = async (id, currentNods) => {
-    const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
-    const hasNodded = noddedSecrets.includes(id);
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+const handleNod = async (id) => {
+  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+  const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
 
-    if (mySecrets.includes(id)) {
-      setNotification("You cannot echo your own silence.");
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-
-    const newCount = hasNodded ? Math.max(0, currentNods - 1) : currentNods + 1;
-    setSecrets(prev => prev.map(s => s.id === id ? { ...s, nods: newCount } : s));
-
-    const updatedNods = hasNodded ? noddedSecrets.filter(i => i !== id) : [...noddedSecrets, id];
-    localStorage.setItem("nodded_secrets", JSON.stringify(updatedNods));
-    await supabase.from('unspoken_words').update({ nods: newCount }).eq('id', id);
-  };
-
-const handleAddWhisper = async (id, whisperText) => {
-  if (!whisperText.trim()) return;
-  
-  // 1. Checks
-  const crisisCheck = checkForCrisisLanguage(whisperText);
-  if (crisisCheck.isCrisis) setShowMentalHealthModal(true);
-  if (whisperText.trim().length < 2) {
-    setNotification("Whisper must be at least 2 characters.");
+  if (mySecrets.includes(id)) {
+    setNotification("You cannot echo your own silence.");
     setTimeout(() => setNotification(null), 3000);
     return;
   }
-  
-  const result = checkText(whisperText);
-  if (result.isProfane) {
-    setNotification(`Found ${result.count} forbidden word(s).`);
-    setTimeout(() => setNotification(null), 4000);
+
+  if (noddedSecrets.includes(id)) {
+    setNotification("You have already acknowledged this heart.");
+    setTimeout(() => setNotification(null), 3000);
     return;
   }
 
-  // 2. Anti-Spam
-  const fingerprint = await generateFingerprint();
-  const rateCheck = await checkRateLimit(supabase, fingerprint, 'whisper');
-  if (!rateCheck.allowed) {
-    setNotification(`Too many whispers. ${rateCheck.reason}`);
-    setTimeout(() => setNotification(null), 4000);
-    return;
-  }
-
-  // 3. GET THE ABSOLUTE LATEST DATA (Crucial fix for "First comment gone")
-  const { data: latestSecret, error: fetchError } = await supabase
-    .from('unspoken_words')
-    .select('replies')
-    .eq('id', id)
-    .single();
-
-  if (fetchError) {
-    setNotification("The void is unreachable right now.");
-    return;
-  }
-
-  // 4. PREPARE THE THREAD (Crucial fix for "Overwriting")
-  const currentReplies = Array.isArray(latestSecret?.replies) ? latestSecret.replies : [];
-  const newReply = { 
-    text: whisperText.trim(), 
-    created_at: new Date().toISOString() 
-  };
-  
-  // Combine OLD + NEW
-  const updatedReplies = [...currentReplies, newReply];
-
-  // 5. UPDATE DATABASE
-  const { error: updateError } = await supabase
-    .from('unspoken_words')
-    .update({ replies: updatedReplies }) // This saves it so it's there on refresh
-    .eq('id', id);
-
-  if (!updateError) {
-    await logAction(supabase, fingerprint, 'whisper', navigator.userAgent);
-    
-    // Update Notification Bell logic
-    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-    if (!commented.includes(id)) {
-      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
-    }
-
-    const lastSeenCounts = JSON.parse(localStorage.getItem("last_seen_reply_counts") || "{}");
-    lastSeenCounts[id] = updatedReplies.length;
-    localStorage.setItem("last_seen_reply_counts", JSON.stringify(lastSeenCounts));
-    
-    // 6. UPDATE LOCAL STATE IMMEDIATELY
-    setSecrets(prev => prev.map(s => 
-      s.id === id ? { ...s, replies: updatedReplies } : s
-    ));
-    
-    setNotification("Whisper sent.");
-  } else {
-    setNotification("The void rejected your whisper.");
-    console.error("Update error:", updateError);
-  }
-
-  setTimeout(() => setNotification(null), 3000);
-};
-const handleDelete = async (id, userPin) => {
   try {
-    // 1. Get the secret first to check if it even has a PIN
-    const { data: secret } = await supabase
-      .from('unspoken_words')
-      .select('post_pin')
-      .eq('id', id)
-      .single();
-
-    // 2. Determine if we should allow deletion
-    // Allow if: Secret has no PIN OR user entered the correct PIN
-    const canDelete = !secret.post_pin || secret.post_pin === userPin;
-
-    if (!canDelete) {
-      setNotification("Incorrect PIN. This secret remains.");
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-
-    // 3. Perform the delete
-    const { error } = await supabase
-      .from('unspoken_words')
-      .delete()
-      .eq('id', id);
+    // --- SECURE CHANGE START ---
+    // We call the Edge Function judge instead of trying to write to the DB directly
+    const { data, error } = await supabase.functions.invoke('echo-pulse', {
+      body: { postId: id }
+    });
 
     if (error) throw error;
+    // --- SECURE CHANGE END ---
 
-    setNotification("The secret has been released back to the void.");
-    setSecrets(prev => prev.filter(s => s.id !== id));
+    // Update local state and storage
+    localStorage.setItem("nodded_secrets", JSON.stringify([...noddedSecrets, id]));
     
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    localStorage.setItem("my_secrets", JSON.stringify(mySecrets.filter(sid => sid !== id)));
-
+    // Trigger the haptic/visual pulse
+    triggerNodPulse();
+    
+    // Note: You don't strictly need setSecrets here anymore because your 
+    // Realtime listener in useEffect will see the DB change and update the UI for you!
   } catch (err) {
-    console.error("Deletion failed:", err);
-    setNotification("The void refused your request.");
+    console.error("❌ Echo failed:", err);
+    setNotification("The echo faded into the void.");
+    setTimeout(() => setNotification(null), 3000);
   }
-  
-  setTimeout(() => setNotification(null), 3000);
 };
+const handleAddWhisper = async (id, whisperText, turnstileToken) => {
+  if (!whisperText.trim() || !turnstileToken) {
+    setNotification("Security check required.");
+    return;
+  }
+
+  try {
+    // 1. Invoke the secure Edge Function
+    const { data, error } = await supabase.functions.invoke('whisper-secure', {
+      body: { 
+        postId: id, 
+        whisperText: whisperText.trim(),
+        turnstileToken: turnstileToken 
+      }
+    });
+
+    if (error) {
+      const errorBody = await error.context.json();
+      throw new Error(errorBody.error || "Security block");
+    }
+
+    // 2. SUCCESS: Add this ID to "commented_secrets" so the Bell tracks it
+    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+    if (!commented.includes(id)) {
+      const updatedCommented = [...commented, id];
+      localStorage.setItem("commented_secrets", JSON.stringify(updatedCommented));
+    }
+
+    setNotification("Whisper sent securely.");
+    
+    // Optional: Auto-hide notification
+    setTimeout(() => setNotification(null), 3000);
+    
+  } catch (err) {
+    console.error("❌ [SECURITY ERROR]:", err.message);
+    setNotification(err.message);
+    setTimeout(() => setNotification(null), 4000);
+  }
+};
+
+
+const confirmDelete = async (pin) => {
+  if (!deleteTargetId) return;
+  setIsDeleting(true); 
+  
+  try {
+    // This calls your 'rapid-responder' Edge Function securely
+    const { data, error } = await supabase.functions.invoke('rapid-responder', { 
+      body: { postId: deleteTargetId, pin: pin } 
+    });
+
+    if (error) {
+      // If the PIN is wrong or post is permanent, the Edge Function returns an error
+      const errorBody = await error.context.json();
+      setNotification(errorBody.error || "The silence remains.");
+    } else if (data?.success) {
+      // If successful, remove it from the map immediately
+      setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
+      setDeleteTargetId(null);
+      setNotification("Secret released into the wind.");
+    }
+  } catch (err) {
+    console.error("❌ Delete failed:", err);
+    setNotification("Connection lost. Try again later.");
+  } finally {
+    setIsDeleting(false);
+    setTimeout(() => setNotification(null), 5000);
+  }
+};
+  const handleToggleListening = async (secretId, isNowListening) => {
+    try {
+      const { error } = await supabase
+        .from('unspoken_words')
+        .update({ is_listening: isNowListening })
+        .eq('id', secretId);
+
+      if (error) throw error;
+
+      setSecrets(prev => prev.map(s => 
+        s.id === secretId ? { ...s, is_listening: isNowListening } : s
+      ));
+    } catch (err) {
+      console.error("❌ Toggle listening failed:", err);
+    }
+  };
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
@@ -384,11 +420,10 @@ const handleDelete = async (id, userPin) => {
       />
 
       <MapContainer 
-        center={[13, 122]} 
-        zoom={4} 
-        minZoom={3} 
-        zoomControl={false} 
-        className="h-full w-full z-0"
+        center={[20, 0]} 
+        zoom={3} 
+        style={{ height: "100%", width: "100%", background: 'transparent' }}
+        zoomControl={false}
       >
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
         <WorldLabel isDark={isDark} />
@@ -409,16 +444,16 @@ const handleDelete = async (id, userPin) => {
         )}
         
         <MapMarkers 
-          secrets={secrets}
-          visited={visited}
+          secrets={secrets} 
+          visited={visited} 
           isDark={isDark}
-          activeSecretId={activeSecretId}
-          setActiveSecretId={setActiveSecretId}
-          onMarkAsVisited={markAsVisited} 
+          onMarkAsVisited={markAsVisited}
           onNod={handleNod}
           onWhisper={handleAddWhisper}
-          onDelete={handleDelete}
-          setNotification={setNotification}
+          onDelete={setDeleteTargetId}
+          activeSecretId={activeSecretId}
+          setActiveSecretId={setActiveSecretId}
+          onToggleListening={handleToggleListening} 
         />
       </MapContainer>
       
