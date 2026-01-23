@@ -1,5 +1,5 @@
 const FORBIDDEN_WORDS = [
-  'tangina', 'putangina', 'gago', 'bobo', 'tarantado', 'puta', 'hayup', 'pota', 'tanga', "kantutan", "subo",
+  'tangina', 'putangina', 'gago', 'bobo', 'tarantado', 'puta', 'hayup', 'pota', 'tanga', "kantutan", "subo", "bembangan",
   'pakyu', 'pokpok', 'kupal', 'ulol', 'pakyut', 'shunga', 'lintek', 'punyeta', 'kantot', 'iyot',
   'hindot', 'pakshet', 'tangengot', 'buwisit', 'leche', 'pisti', 'giatay', 'kayat', "patayin", "burat",
   'bitch', 'nigga', 'nigger', 'fuck', 'shit', 'asshole', 'cunt', 'dick', 'pussy', 
