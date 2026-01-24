@@ -3,7 +3,7 @@ const FORBIDDEN_WORDS = [
   'pakyu', 'pokpok', 'kupal', 'ulol', 'pakyut', 'shunga', 'lintek', 'punyeta', 'kantot', 'iyot',
   'hindot', 'pakshet', 'tangengot', 'buwisit', 'leche', 'pisti', 'giatay', 'kayat', "patayin", "burat",
   'bitch', 'nigga', 'nigger', 'fuck', 'shit', 'asshole', 'cunt', 'dick', 'pussy', 
-  'faggot', 'bastard', 'slut', 'whore', 'motherfucker', "fubu", "cock", "sex"
+  'faggot', 'bastard', 'slut', 'whore', 'motherfucker', "fubu", "cock", "sex", "ulol"
 ];
 
 const LEET_MAP = {
