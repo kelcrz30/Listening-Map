@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ManifestoOverlay({ onClose }) {
+export default function ManifestoOverlay({ onClose }) { 
   return (
     <div className="fixed inset-0 z-[2001] flex flex-col items-center justify-between bg-[#0a0a0a] py-20 px-6">
       

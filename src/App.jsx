@@ -81,7 +81,7 @@ function AppContent() {
         
         const visibleSecrets = data.filter(post => {
           // Show if post is public OR if it's the user's own post
-          return post.is_visible !== false || mySecrets.includes(post.id);
+          return post.is_visible !== true || mySecrets.includes(post.id);
         });
         
         setSecrets(visibleSecrets || []);
