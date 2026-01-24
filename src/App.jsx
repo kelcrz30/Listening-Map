@@ -286,12 +286,15 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
   }
 
   try {
-    // 1. Invoke the secure Edge Function
+    // Generate the browser fingerprint to check ban status
+    const fingerprint = await generateFingerprint();
+
     const { data, error } = await supabase.functions.invoke('whisper-secure', {
       body: { 
         postId: id, 
         whisperText: whisperText.trim(),
-        turnstileToken: turnstileToken 
+        turnstileToken: turnstileToken,
+        fingerprint: fingerprint // <--- CRITICAL: Tells the server who you are
       }
     });
 
@@ -300,20 +303,15 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
       throw new Error(errorBody.error || "Security block");
     }
 
-    // 2. SUCCESS: Add this ID to "commented_secrets" so the Bell tracks it
     const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
     if (!commented.includes(id)) {
-      const updatedCommented = [...commented, id];
-      localStorage.setItem("commented_secrets", JSON.stringify(updatedCommented));
+      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
     }
 
-    setNotification("Whisper sent securely.");
-    
-    // Optional: Auto-hide notification
+    setNotification(data.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
     setTimeout(() => setNotification(null), 3000);
     
   } catch (err) {
-    console.error("❌ [SECURITY ERROR]:", err.message);
     setNotification(err.message);
     setTimeout(() => setNotification(null), 4000);
   }

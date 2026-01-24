@@ -44,7 +44,16 @@ const whisperTurnstileRef = useRef(null);
     // Show individual markers at >= this zoom
     const CLUSTER_OFF_ZOOM = 12;
 
+const echoedSecrets = useMemo(() => 
+    JSON.parse(localStorage.getItem("nodded_secrets") || "[]"),
+    [activePopupId] // This ensures they refresh when a popup opens
+  );
 
+  const mySecrets = useMemo(() => 
+    JSON.parse(localStorage.getItem("my_secrets") || "[]"),
+    [activePopupId]
+  );
+  
     useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
@@ -211,18 +220,25 @@ const updateViewport = () => {
     };
 
     // Optimized clustering with better grid calculation
-    const clusteredMarkers = useMemo(() => {
-      if (!bounds || !secrets?.length) return [];
+const clusteredMarkers = useMemo(() => {
+  if (!bounds || !secrets?.length) return [];
 
-      // Sanitize coordinates
-      const sanitized = secrets.map(s => ({
-        ...s,
-        lat: Number(s.lat),
-        lng: Number(s.lng)
-      })).filter(s => !isNaN(s.lat) && !isNaN(s.lng));
+  // Sanitize coordinates
+  const sanitized = secrets.map(s => ({
+    ...s,
+    lat: Number(s.lat),
+    lng: Number(s.lng)
+  })).filter(s => !isNaN(s.lat) && !isNaN(s.lng));
 
-      // Filter for visible area
-      const visible = sanitized.filter(s => bounds.contains([s.lat, s.lng]));
+  // Filter for visible area AND shadowban logic
+  const visible = sanitized.filter(s => {
+    const isInsideBounds = bounds.contains([s.lat, s.lng]);
+    
+    // Logic: Show if it's public (is_visible) OR if it belongs to this user
+    const shouldBeVisible = s.is_visible !== false || mySecrets.includes(s.id);
+
+    return isInsideBounds && shouldBeVisible;
+  });
 
       // Show individual markers at high zoom
       if (zoomLevel >= CLUSTER_OFF_ZOOM) {
@@ -276,18 +292,9 @@ const updateViewport = () => {
       });
 
       return result;
-    }, [secrets, bounds, zoomLevel]);
+    }, [secrets, bounds, zoomLevel, mySecrets]);
 
-    // Cache echoed and my secrets
-    const echoedSecrets = useMemo(() => 
-      JSON.parse(localStorage.getItem("nodded_secrets") || "[]"),
-      [activePopupId]
-    );
-
-    const mySecrets = useMemo(() =>
-      JSON.parse(localStorage.getItem("my_secrets") || "[]"),
-      [activePopupId]
-    );
+ 
 
     useEffect(() => {
       if (scrollRef.current) {
@@ -324,10 +331,10 @@ const updateViewport = () => {
           if (cluster.isCluster) {
             const count = cluster.secrets.length;
             
-            const hasListening = cluster.secrets.some(s => s.is_listening);
-            const hasEchoed = cluster.secrets.some(s => echoedSecrets.includes(s.id));
+ const hasListening = cluster.secrets.some(s => s.is_listening);
+const hasEchoed = cluster.secrets.some(s => echoedSecrets.includes(s.id));
             
-            const clusterType = hasListening ? 'listening' : hasEchoed ? 'echoed' : 'default';
+            const clusterType = hasListening ? 'listening' : (hasEchoed ? 'echoed' : 'default');
 
             return (
               <Marker
@@ -361,25 +368,24 @@ const updateViewport = () => {
 
           return (
 <Marker
-    // Add s.is_listening to the key here
-    key={`${s.id}-${s.is_listening}`} 
+    // IMPORTANT: Include s.is_listening and hasEchoed in the key.
+    // This forces React to refresh the icon the moment the state changes.
+    key={`${s.id}-${s.is_listening}-${hasEchoed}`} 
     position={[s.lat, s.lng]}
-    ref={(el) => {
-      if (el) markerRefs.current[s.id] = el;
-    }}
+    ref={(el) => { if (el) markerRefs.current[s.id] = el; }}
     icon={getMemoryIcon(
-      s.is_listening,
+      s.is_listening, // This will now be false by default
       isVisited,
       weight,
       isDark
     )}
-              eventHandlers={{
-                click: () => {
-                  onMarkAsVisited(s.id);
-                  setActivePopupId(s.id);
-                },
-              }}
-            >
+    eventHandlers={{
+      click: () => {
+        onMarkAsVisited(s.id);
+        setActivePopupId(s.id);
+      },
+    }}
+  >
              <Popup
   ref={popupRef}
   maxWidth={240}
@@ -523,17 +529,25 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
     )}
 
     {/* Replies */}
-    {Array.isArray(currentSecret.replies) &&
-      currentSecret.replies.map((reply, index) => (
-        <div key={`reply-${currentSecret.id}-${index}`} className="border-b border-white/5 last:border-0 pb-2">
-          <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
-            "{reply.text || (typeof reply === "string" ? reply : "")}"
-          </p>
-          <span className="text-[7px] uppercase opacity-30 mt-1 block">
-            {reply.created_at ? formatRelativeTime(reply.created_at) : "recently"}
-          </span>
-        </div>
-      ))}
+{Array.isArray(currentSecret.replies) &&
+  currentSecret.replies
+    .filter(reply => {
+      // SHADOWBAN LOGIC: 
+      // 1. Show if the reply is marked visible
+      // 2. OR show if the USER is the owner of the main secret (my_secrets)
+      return reply.is_visible !== false || mySecrets.includes(currentSecret.id);
+    })
+    .map((reply, index) => (
+      <div key={`reply-${currentSecret.id}-${index}`} className="border-b border-white/5 last:border-0 pb-2">
+        <p className={`text-[11px] italic break-words break-all ${isDark ? "text-orange-200/80" : "text-orange-700"}`}>
+          "{reply.text || (typeof reply === "string" ? reply : "")}"
+        </p>
+        <span className="text-[7px] uppercase opacity-30 mt-1 block">
+          {reply.created_at ? formatRelativeTime(reply.created_at) : "recently"}
+        </span>
+      </div>
+    ))
+}
   </div>
 
   {/* Whisper input */}
