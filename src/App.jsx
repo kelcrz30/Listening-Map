@@ -61,23 +61,30 @@ function AppContent() {
   const [activeSecretId, setActiveSecretId] = useState(null);
   const [onlineCount, setOnlineCount] = useState(1);
   const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
-const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // --- DATABASE & REALTIME LOGIC ---
   useEffect(() => {
-    
     const fetchSecrets = async () => {
+      // ✅ REMOVED .eq('is_visible', true) - Now we handle visibility client-side!
       const { data, error } = await supabase
         .from('unspoken_words')
         .select('*')
-        .eq('is_visible', true)
         .order('created_at', { ascending: false })
         .limit(500);
       
       if (error) {
         console.error('❌ [FETCH] Error:', error);
       } else {
-
-        setSecrets(data || []);
+        // ✅ Filter shadow-banned posts on the client
+        const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+        
+        const visibleSecrets = data.filter(post => {
+          // Show if post is public OR if it's the user's own post
+          return post.is_visible !== false || mySecrets.includes(post.id);
+        });
+        
+        setSecrets(visibleSecrets || []);
       }
     };
       
@@ -117,7 +124,11 @@ const [isDeleting, setIsDeleting] = useState(false);
             return;
           }
 
-          if (completePost.is_visible !== false) {
+          // ✅ FIXED: Check if this is the user's own post OR if it's public
+          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+          const shouldShow = completePost.is_visible !== false || mySecrets.includes(completePost.id);
+
+          if (shouldShow) {
             setSecrets((prev) => {
               if (prev.some(s => s.id === completePost.id)) {
                 return prev;
@@ -125,13 +136,17 @@ const [isDeleting, setIsDeleting] = useState(false);
               return [completePost, ...prev];
             });
             
-            setNotification("A new heart has shared a secret...");
-            setTimeout(() => setNotification(null), 4000);
+            // Only show notification for public posts (not shadow-banned)
+            if (completePost.is_visible !== false) {
+              setNotification("A new heart has shared a secret...");
+              setTimeout(() => setNotification(null), 4000);
+            }
           }
         }
         
         // --- HANDLE UPDATES (replies, nods, is_listening) ---
         if (payload.eventType === 'UPDATE') {
+          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
           
           setSecrets((prev) => {
             return prev.map(s => {
@@ -145,11 +160,13 @@ const [isDeleting, setIsDeleting] = useState(false);
                 replies: Array.isArray(payload.new.replies) ? payload.new.replies : (s.replies || []),
                 is_listening: payload.new.is_listening ?? s.is_listening ?? false
               };
-            }).filter(s => s.is_visible !== false);
+            }).filter(s => {
+              // ✅ FIXED: Keep shadow-banned posts if they belong to this user
+              return s.is_visible !== false || mySecrets.includes(s.id);
+            });
           });
           
           // Check if this is our post and notify
-          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
           if (mySecrets.includes(payload.new.id)) {
             setNotification("Someone whispered back to your secret...");
             setTimeout(() => setNotification(null), 4000);
@@ -239,113 +256,102 @@ const [isDeleting, setIsDeleting] = useState(false);
     setTimeout(() => setNotification(null), 3000);
   };
 
-const handleNod = async (id) => {
-  const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-  const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
+  const handleNod = async (id) => {
+    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
 
-  if (mySecrets.includes(id)) {
-    setNotification("You cannot echo your own silence.");
-    setTimeout(() => setNotification(null), 3000);
-    return;
-  }
+    if (mySecrets.includes(id)) {
+      setNotification("You cannot echo your own silence.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
 
-  if (noddedSecrets.includes(id)) {
-    setNotification("You have already acknowledged this heart.");
-    setTimeout(() => setNotification(null), 3000);
-    return;
-  }
+    if (noddedSecrets.includes(id)) {
+      setNotification("You have already acknowledged this heart.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
 
-  try {
-    // --- SECURE CHANGE START ---
-    // We call the Edge Function judge instead of trying to write to the DB directly
-    const { data, error } = await supabase.functions.invoke('echo-pulse', {
-      body: { postId: id }
-    });
+    try {
+      const { data, error } = await supabase.functions.invoke('echo-pulse', {
+        body: { postId: id }
+      });
 
-    if (error) throw error;
-    // --- SECURE CHANGE END ---
+      if (error) throw error;
 
-    // Update local state and storage
-    localStorage.setItem("nodded_secrets", JSON.stringify([...noddedSecrets, id]));
-    
-    // Trigger the haptic/visual pulse
-    triggerNodPulse();
-    
-    // Note: You don't strictly need setSecrets here anymore because your 
-    // Realtime listener in useEffect will see the DB change and update the UI for you!
-  } catch (err) {
-    console.error("❌ Echo failed:", err);
-    setNotification("The echo faded into the void.");
-    setTimeout(() => setNotification(null), 3000);
-  }
-};
-const handleAddWhisper = async (id, whisperText, turnstileToken) => {
-  if (!whisperText.trim() || !turnstileToken) {
-    setNotification("Security check required.");
-    return;
-  }
+      localStorage.setItem("nodded_secrets", JSON.stringify([...noddedSecrets, id]));
+      triggerNodPulse();
+      
+    } catch (err) {
+      console.error("❌ Echo failed:", err);
+      setNotification("The echo faded into the void.");
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
 
-  try {
-    // Generate the browser fingerprint to check ban status
-    const fingerprint = await generateFingerprint();
+  const handleAddWhisper = async (id, whisperText, turnstileToken) => {
+    if (!whisperText.trim() || !turnstileToken) {
+      setNotification("Security check required.");
+      return;
+    }
 
-    const { data, error } = await supabase.functions.invoke('whisper-secure', {
-      body: { 
-        postId: id, 
-        whisperText: whisperText.trim(),
-        turnstileToken: turnstileToken,
-        fingerprint: fingerprint // <--- CRITICAL: Tells the server who you are
+    try {
+      const fingerprint = await generateFingerprint();
+
+      const { data, error } = await supabase.functions.invoke('whisper-secure', {
+        body: { 
+          postId: id, 
+          whisperText: whisperText.trim(),
+          turnstileToken: turnstileToken,
+          fingerprint: fingerprint
+        }
+      });
+
+      if (error) {
+        const errorBody = await error.context.json();
+        throw new Error(errorBody.error || "Security block");
       }
-    });
 
-    if (error) {
-      const errorBody = await error.context.json();
-      throw new Error(errorBody.error || "Security block");
+      const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+      if (!commented.includes(id)) {
+        localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
+      }
+
+      setNotification(data.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
+      setTimeout(() => setNotification(null), 3000);
+      
+    } catch (err) {
+      setNotification(err.message);
+      setTimeout(() => setNotification(null), 4000);
     }
+  };
 
-    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-    if (!commented.includes(id)) {
-      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
-    }
-
-    setNotification(data.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
-    setTimeout(() => setNotification(null), 3000);
+  const confirmDelete = async (pin) => {
+    if (!deleteTargetId) return;
+    setIsDeleting(true); 
     
-  } catch (err) {
-    setNotification(err.message);
-    setTimeout(() => setNotification(null), 4000);
-  }
-};
+    try {
+      const { data, error } = await supabase.functions.invoke('rapid-responder', { 
+        body: { postId: deleteTargetId, pin: pin } 
+      });
 
-
-const confirmDelete = async (pin) => {
-  if (!deleteTargetId) return;
-  setIsDeleting(true); 
-  
-  try {
-    // This calls your 'rapid-responder' Edge Function securely
-    const { data, error } = await supabase.functions.invoke('rapid-responder', { 
-      body: { postId: deleteTargetId, pin: pin } 
-    });
-
-    if (error) {
-      // If the PIN is wrong or post is permanent, the Edge Function returns an error
-      const errorBody = await error.context.json();
-      setNotification(errorBody.error || "The silence remains.");
-    } else if (data?.success) {
-      // If successful, remove it from the map immediately
-      setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
-      setDeleteTargetId(null);
-      setNotification("Secret released into the wind.");
+      if (error) {
+        const errorBody = await error.context.json();
+        setNotification(errorBody.error || "The silence remains.");
+      } else if (data?.success) {
+        setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
+        setDeleteTargetId(null);
+        setNotification("Secret released into the wind.");
+      }
+    } catch (err) {
+      console.error("❌ Delete failed:", err);
+      setNotification("Connection lost. Try again later.");
+    } finally {
+      setIsDeleting(false);
+      setTimeout(() => setNotification(null), 5000);
     }
-  } catch (err) {
-    console.error("❌ Delete failed:", err);
-    setNotification("Connection lost. Try again later.");
-  } finally {
-    setIsDeleting(false);
-    setTimeout(() => setNotification(null), 5000);
-  }
-};
+  };
+
   const handleToggleListening = async (secretId, isNowListening) => {
     try {
       const { error } = await supabase
