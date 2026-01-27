@@ -1,91 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sulyap | Moments of Silence</title>
-    <style>
-        :root {
-            --bg: #0a0a0a;
-            --text: #e5e5e5;
-            --accent: #f59e0b; /* Matching your marker gold */
-        }
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/sulyap-icon.png" /> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=0" />
+    <meta name="description" content="A digital map for the things we leave unsaid. Whisper your secrets into the silence." />
 
-        body {
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: var(--bg);
-            color: var(--text);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            text-align: center;
-            overflow: hidden;
-        }
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 
-        .container {
-            max-width: 600px;
-            padding: 20px;
-        }
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-        .logo {
-            font-size: 2rem;
-            letter-spacing: 0.5rem;
-            font-weight: 300;
-            text-transform: uppercase;
-            margin-bottom: 2rem;
-            opacity: 0.9;
-        }
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
-        .circle {
-            width: 12px;
-            height: 12px;
-            background: var(--accent);
-            border-radius: 50%;
-            margin: 0 auto 2rem;
-            animation: pulse 2s infinite ease-in-out;
-            box-shadow: 0 0 15px var(--accent);
-        }
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
-        h1 {
-            font-weight: 300;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        p {
-            font-weight: 300;
-            color: #888;
-            line-height: 1.6;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.5); opacity: 0.4; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-
-        .footer {
-            position: fixed;
-            bottom: 40px;
-            font-size: 0.8rem;
-            color: #444;
-            letter-spacing: 0.1rem;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <div class="logo">S U L Y A P</div>
-        <div class="circle"></div>
-        <h1>The map is resting</h1>
-        <p>We are currently tending to the constellations. <br> Sulyap will return shortly for your unspoken words.</p>
-    </div>
-
-    <div class="footer">HEARTS LISTENING</div>
-
-</body>
+    <title>Sulyap</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
