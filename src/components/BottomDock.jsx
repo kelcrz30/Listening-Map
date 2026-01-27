@@ -1,20 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Turnstile } from '@marsidev/react-turnstile';
-import { generateFingerprint, logAction } from "../utils/antiSpam";
-import { checkForCrisisLanguage } from '../utils/mentalHealthDetector';
-import L from 'leaflet';
-import { checkText } from "../utils/wordFilter";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-export default function BottomDock({ 
-  onAboutClick, 
-  onContactClick, 
+function getOrCreateStableId(key = "uw_fingerprint") {
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id =
+      (crypto?.randomUUID?.() ||
+        `fp_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+export default function BottomDock({
+  onAboutClick,
+  onContactClick,
   onDonateClick,
-  onPostSuccess, 
-  isDark, 
-  useCurrentLocation, 
+  onSearchClick, // ✅ optional: show Search button if you pass this prop
+  onPostSuccess,
+  isDark,
+  useCurrentLocation,
   onLocationModeToggle,
   selectedLocation,
-  onCrisisDetected  
 }) {
   const [inputText, setInputText] = useState("");
   const [postPin, setPostPin] = useState("");
@@ -23,123 +29,301 @@ export default function BottomDock({
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState("");
   const [honeypot, setHoneypot] = useState("");
-  
-  // 📊 Post limit tracking
+
+  // Human signals (collect only — DO NOT block on client)
+  const [firstKeystroke, setFirstKeystroke] = useState(null);
+  const [keystrokeTimestamps, setKeystrokeTimestamps] = useState([]);
+  const [hasPointerMoved, setHasPointerMoved] = useState(false);
+  const [interactionScore, setInteractionScore] = useState(0);
+
+  // Local UX counters (backend must enforce real limits)
   const [dailyPostCount, setDailyPostCount] = useState(0);
   const [hourlyPostCount, setHourlyPostCount] = useState(0);
-  
-  const turnstileRef = useRef(null);
+
+  const inputRef = useRef(null);
+
+  // Turnstile refs
+  const turnstileDivRef = useRef(null);
+  const turnstileWidgetIdRef = useRef(null);
+  const turnstileReadyRef = useRef(false);
 
   const CHAR_LIMIT = 500;
   const MIN_TEXT_LENGTH = 2;
-  const MIN_INTERVAL_MINUTES = 2;
-  const EDGE_FUNCTION_URL = `https://zndkwygyxtbnlrpotgig.supabase.co/functions/v1/create-post`;
-  
-  // User limits (matches backend)
+const IS_DEV =
+  location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+const MIN_INTERVAL_MINUTES = IS_DEV ? 0 : 2;
+
+const EDGE_FUNCTION_URL = "/api/create-post";
+
+
   const MAX_POSTS_PER_DAY = 30;
-  const MAX_POSTS_PER_HOUR = 8;
-  
+  const MAX_POSTS_PER_HOUR = 25;
+
+  const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const fingerprint = useMemo(() => getOrCreateStableId(), []);
+
   const isNearLimit = inputText.length > 450;
   const isNearDailyLimit = dailyPostCount >= MAX_POSTS_PER_DAY * 0.8;
   const isNearHourlyLimit = hourlyPostCount >= MAX_POSTS_PER_HOUR * 0.75;
 
-  // Load post counts from localStorage
+  // ----------------------------
+  // Load Turnstile script once
+  // ----------------------------
   useEffect(() => {
-    const loadPostCounts = () => {
-      const dailyData = localStorage.getItem('daily_posts');
-      const hourlyData = localStorage.getItem('hourly_posts');
-      
+    if (!TURNSTILE_SITE_KEY) return;
+
+    const scriptId = "cf-turnstile-script";
+    let script = document.getElementById(scriptId);
+
+    const onLoad = () => {
+      turnstileReadyRef.current = true;
+      renderTurnstile();
+    };
+
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src =
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.onload = onLoad;
+      document.head.appendChild(script);
+    } else {
+      if (window.turnstile) onLoad();
+      else script.addEventListener("load", onLoad, { once: true });
+    }
+
+    return () => {
+      try {
+        script?.removeEventListener?.("load", onLoad);
+      } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [TURNSTILE_SITE_KEY]);
+
+  const resetTurnstile = () => {
+    try {
+      if (window.turnstile && turnstileWidgetIdRef.current != null) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      }
+    } catch {}
+  };
+
+  const removeTurnstile = () => {
+    try {
+      if (window.turnstile && turnstileWidgetIdRef.current != null) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+      }
+    } catch {}
+    turnstileWidgetIdRef.current = null;
+  };
+
+  const renderTurnstile = () => {
+    if (!TURNSTILE_SITE_KEY) return;
+    if (!turnstileReadyRef.current || !window.turnstile) return;
+    if (!turnstileDivRef.current) return;
+
+    const shouldShow = inputText.trim().length > 0 && cooldown === 0;
+
+    if (!shouldShow) {
+      removeTurnstile();
+      setCaptchaToken(null);
+      return;
+    }
+
+    // avoid multiple renders (prevents "already loaded / imported multiple times")
+    if (turnstileWidgetIdRef.current != null) return;
+
+    setCaptchaToken(null);
+
+    turnstileWidgetIdRef.current = window.turnstile.render(
+      turnstileDivRef.current,
+      {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: isDark ? "dark" : "light",
+        // For non-interactive widget types, Cloudflare still often needs "managed"
+        // But your dashboard is "Non-interactive", keep this:
+        size: "normal",
+        callback: (token) => setCaptchaToken(token || null),
+        "expired-callback": () => setCaptchaToken(null),
+        "error-callback": () => setCaptchaToken(null),
+      }
+    );
+  };
+
+  useEffect(() => {
+    renderTurnstile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputText, cooldown, isDark]);
+
+  // ----------------------------
+  // Human-signal collection (no blocking)
+  // ----------------------------
+  useEffect(() => {
+    let count = 0;
+    const onMove = () => {
+      count++;
+      if (count > 6 && !hasPointerMoved) {
+        setHasPointerMoved(true);
+        setInteractionScore((p) => p + 2);
+      }
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [hasPointerMoved]);
+
+  const onFocus = () => setInteractionScore((p) => p + 1);
+
+  // ----------------------------
+  // Local counters + cooldown
+  // ----------------------------
+  useEffect(() => {
+    const loadCounts = () => {
+      const dailyData = localStorage.getItem("daily_posts");
+      const hourlyData = localStorage.getItem("hourly_posts");
+      const today = new Date().toISOString().split("T")[0];
+
       if (dailyData) {
-        const { count, date } = JSON.parse(dailyData);
-        const today = new Date().toISOString().split('T')[0];
-        if (date === today) {
-          setDailyPostCount(count);
-        } else {
-          localStorage.setItem('daily_posts', JSON.stringify({ count: 0, date: today }));
+        const parsed = JSON.parse(dailyData);
+        if (parsed?.date === today) setDailyPostCount(parsed?.count || 0);
+        else {
+          localStorage.setItem(
+            "daily_posts",
+            JSON.stringify({ count: 0, date: today })
+          );
           setDailyPostCount(0);
         }
+      } else {
+        localStorage.setItem(
+          "daily_posts",
+          JSON.stringify({ count: 0, date: today })
+        );
+        setDailyPostCount(0);
       }
-      
+
       if (hourlyData) {
-        const { count, timestamp } = JSON.parse(hourlyData);
-        const oneHourAgo = Date.now() - 3600000;
-        if (timestamp > oneHourAgo) {
-          setHourlyPostCount(count);
-        } else {
-          localStorage.removeItem('hourly_posts');
+        const parsed = JSON.parse(hourlyData);
+        if (parsed?.timestamp > Date.now() - 3600000)
+          setHourlyPostCount(parsed?.count || 0);
+        else {
+          localStorage.removeItem("hourly_posts");
           setHourlyPostCount(0);
         }
       }
     };
-    
-    loadPostCounts();
-    const interval = setInterval(loadPostCounts, 60000);
+
+    loadCounts();
+    const interval = setInterval(loadCounts, 60000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    const savedCooldown = localStorage.getItem('post_cooldown');
-    if (savedCooldown) {
-      const remaining = Math.max(0, Math.floor((parseInt(savedCooldown) - Date.now()) / 1000));
+    const saved = localStorage.getItem("post_cooldown");
+    if (saved) {
+      const remaining = Math.max(
+        0,
+        Math.floor((parseInt(saved, 10) - Date.now()) / 1000)
+      );
       setCooldown(remaining);
     }
   }, []);
 
   useEffect(() => {
-    let timer;
-    if (cooldown > 0) {
-      timer = setInterval(() => {
-        setCooldown((prev) => {
-          if (prev <= 1) {
-            localStorage.removeItem('post_cooldown');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
+    if (cooldown <= 0) return;
+    const t = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          localStorage.removeItem("post_cooldown");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
   }, [cooldown]);
 
   const updatePostCounts = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const newDailyCount = dailyPostCount + 1;
-    localStorage.setItem('daily_posts', JSON.stringify({ 
-      count: newDailyCount, 
-      date: today 
-    }));
-    setDailyPostCount(newDailyCount);
-    
-    const newHourlyCount = hourlyPostCount + 1;
-    localStorage.setItem('hourly_posts', JSON.stringify({ 
-      count: newHourlyCount, 
-      timestamp: Date.now() 
-    }));
-    setHourlyPostCount(newHourlyCount);
+    const today = new Date().toISOString().split("T")[0];
+
+    const newDaily = dailyPostCount + 1;
+    localStorage.setItem(
+      "daily_posts",
+      JSON.stringify({ count: newDaily, date: today })
+    );
+    setDailyPostCount(newDaily);
+
+    const newHourly = hourlyPostCount + 1;
+    localStorage.setItem(
+      "hourly_posts",
+      JSON.stringify({ count: newHourly, timestamp: Date.now() })
+    );
+    setHourlyPostCount(newHourly);
+  };
+
+  // ----------------------------
+  // Typing metrics (send to backend)
+  // ----------------------------
+  const calculateTypingMetrics = () => {
+    if (keystrokeTimestamps.length < 2) {
+      return {
+        avgSpeed: 0,
+        variance: 0,
+        totalTypingTime: firstKeystroke ? Date.now() - firstKeystroke : 0,
+      };
+    }
+
+    const intervals = [];
+    for (let i = 1; i < keystrokeTimestamps.length; i++) {
+      intervals.push(keystrokeTimestamps[i] - keystrokeTimestamps[i - 1]);
+    }
+    const avgSpeed = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const variance =
+      intervals.reduce((sum, x) => sum + (x - avgSpeed) ** 2, 0) /
+      intervals.length;
+    const totalTypingTime = firstKeystroke ? Date.now() - firstKeystroke : 0;
+
+    return { avgSpeed, variance, totalTypingTime };
+  };
+
+  const canPost = () =>
+    inputText.trim().length >= MIN_TEXT_LENGTH &&
+    inputText.length <= CHAR_LIMIT &&
+    !!captchaToken &&
+    cooldown === 0 &&
+    !isPosting &&
+    (useCurrentLocation || selectedLocation) &&
+    dailyPostCount < MAX_POSTS_PER_DAY &&
+    hourlyPostCount < MAX_POSTS_PER_HOUR;
+
+  const handleTextChange = (e) => {
+    const newValue = e.target.value.slice(0, CHAR_LIMIT);
+
+    if (!firstKeystroke && newValue.length === 1) setFirstKeystroke(Date.now());
+    if (newValue.length > inputText.length) {
+      setKeystrokeTimestamps((prev) => [...prev, Date.now()].slice(-50));
+    }
+    if (newValue.length === 0) {
+      setFirstKeystroke(null);
+      setKeystrokeTimestamps([]);
+    }
+
+    setInputText(newValue);
   };
 
   const handlePost = async () => {
-    if (!captchaToken || cooldown > 0 || !inputText.trim() || isPosting) return;
+    if (!canPost()) return;
 
-    if (dailyPostCount >= MAX_POSTS_PER_DAY) {
-      setError(`Daily limit reached (${MAX_POSTS_PER_DAY} posts). Try again tomorrow.`);
-      return;
-    }
-    
-    if (hourlyPostCount >= MAX_POSTS_PER_HOUR) {
-      setError(`Hourly limit reached (${MAX_POSTS_PER_HOUR} posts). Please wait.`);
-      return;
-    }
-
+    // Honeypot: pretend success (no leak)
     if (honeypot.trim() !== "") {
-      console.warn("🤖 Bot detected via honeypot");
       setIsPosting(true);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((r) => setTimeout(r, 900));
       setInputText("");
       setPostPin("");
       setHoneypot("");
       setCaptchaToken(null);
-      if (turnstileRef.current) turnstileRef.current.reset();
+      removeTurnstile();
       setIsPosting(false);
       return;
     }
@@ -148,176 +332,203 @@ export default function BottomDock({
     setError("");
 
     try {
-      const trimmedText = inputText.trim();
-
-      if (trimmedText.length < MIN_TEXT_LENGTH) {
-        throw new Error(`Message must be at least ${MIN_TEXT_LENGTH} characters.`);
-      }
-
-      const filterResult = checkText(trimmedText);
-      if (filterResult.isProfane) {
-        throw new Error(`The void rejects this language. (${filterResult.count} forbidden word(s) detected)`);
-      }
-
-      const crisisCheck = checkForCrisisLanguage(trimmedText);
-      if (crisisCheck.isCrisis && onCrisisDetected) onCrisisDetected();
-
       let lat, lng;
+
       if (useCurrentLocation) {
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            timeout: 10000,
+          });
         });
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
       } else {
-        if (!selectedLocation) throw new Error("Please select a location on the map first.");
+        if (!selectedLocation)
+          throw new Error("Please select a location on the map first.");
         lat = selectedLocation.lat;
         lng = selectedLocation.lng;
       }
 
-      const response = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: trimmedText,
-          lat: parseFloat(lat.toFixed(6)),
-          lng: parseFloat(lng.toFixed(6)),
-          post_pin: (postPin && postPin.length === 4) ? postPin : null,
-          turnstileToken: captchaToken,
-          fingerprint: await generateFingerprint(),
-          timestamp: Date.now(),
-          honeypot: honeypot
-        })
+      const trimmedText = inputText.trim();
+      const metrics = calculateTypingMetrics();
+const FORCE_BOT_TEST = false; // turn to false after testing
+
+const botMetrics = FORCE_BOT_TEST
+  ? {
+      typingSpeed: 10,         // super fast (<30)
+      typingVariance: 0,       // robotic (<100)
+      totalTypingTime: 500,    // too fast (<2000)
+      keystrokeCount: 25,      // enough to trigger checks
+      hasPointerMovement: false,
+      interactionScore: 0,
+    }
+  : {
+      typingSpeed: metrics.avgSpeed,
+      typingVariance: metrics.variance,
+      totalTypingTime: metrics.totalTypingTime,
+      keystrokeCount: keystrokeTimestamps.length,
+      hasPointerMovement: hasPointerMoved,
+      interactionScore,
+    };
+
+      const resp = await fetch(EDGE_FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({
+  text: trimmedText,
+  lat: parseFloat(Number(lat).toFixed(6)),
+  lng: parseFloat(Number(lng).toFixed(6)),
+  post_pin: postPin?.length === 4 ? postPin : null,
+  turnstileToken: captchaToken,
+  fingerprint,
+  timestamp: Date.now(),
+  honeypot,
+  requestId:
+    crypto?.randomUUID?.() ||
+    `req_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+  behaviorMetrics: botMetrics, // ✅ this is the test payload
+}),
+
       });
 
-      const result = await response.json();
+      const result = await resp.json().catch(() => ({}));
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          // 🔧 FIX: Only set cooldown if NOT a location/geofencing error
-          const isLocationError = result.error?.includes('location') || result.error?.includes('area');
-          
-          if (!isLocationError) {
-            const retrySecs = MIN_INTERVAL_MINUTES * 60;
-            localStorage.setItem('post_cooldown', (Date.now() + retrySecs * 1000).toString());
-            setCooldown(retrySecs);
-          }
-          
-          // Sync counts with backend
-          if (result.error?.includes('Daily limit')) {
-            setDailyPostCount(MAX_POSTS_PER_DAY);
-          } else if (result.error?.includes('slow down')) {
-            setHourlyPostCount(MAX_POSTS_PER_HOUR);
-          }
-        }
-        throw new Error(result.error || "Submission failed");
+      if (!resp.ok) {
+        // Keep errors generic (don’t teach attacker)
+if (resp.status === 429) {
+  if (!IS_DEV) {
+    const retrySecs = MIN_INTERVAL_MINUTES * 60;
+    localStorage.setItem(
+      "post_cooldown",
+      String(Date.now() + retrySecs * 1000)
+    );
+    setCooldown(retrySecs);
+  }
+}
+        throw new Error(result?.error || "Please try again later.");
       }
 
-      // Success - update counts
+      // success (even if backend shadowbanned, it returns success)
       updatePostCounts();
 
-      const successCooldown = MIN_INTERVAL_MINUTES * 60; 
-      localStorage.setItem('post_cooldown', (Date.now() + successCooldown * 1000).toString());
-      setCooldown(successCooldown);
+if (!IS_DEV) {
+  const successCooldown = MIN_INTERVAL_MINUTES * 60;
+  localStorage.setItem(
+    "post_cooldown",
+    String(Date.now() + successCooldown * 1000)
+  );
+  setCooldown(successCooldown);
+}
 
+      // clear UI
       setInputText("");
       setPostPin("");
       setHoneypot("");
       setCaptchaToken(null);
-      if (turnstileRef.current) turnstileRef.current.reset();
+      setFirstKeystroke(null);
+      setKeystrokeTimestamps([]);
+      setHasPointerMoved(false);
+      setInteractionScore(0);
+
+      // remove widget after post (prevents "hung widget" + "already loaded" spam)
+      removeTurnstile();
 
       if (onPostSuccess) onPostSuccess(result.post);
-      logAction('post_created');
-
-    } catch (err) {
-      setError(err.message);
-      if (turnstileRef.current) turnstileRef.current.reset();
+    } catch (e) {
+      setError(e?.message || "Please try again later.");
+      setCaptchaToken(null);
+      resetTurnstile();
     } finally {
       setIsPosting(false);
     }
   };
 
-  const canPost = () => {
-    return (
-      inputText.trim().length >= MIN_TEXT_LENGTH &&
-      inputText.length <= CHAR_LIMIT &&
-      captchaToken &&
-      cooldown === 0 &&
-      !isPosting &&
-      (useCurrentLocation || selectedLocation) &&
-      dailyPostCount < MAX_POSTS_PER_DAY &&
-      hourlyPostCount < MAX_POSTS_PER_HOUR
-    );
-  };
-
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-5xl px-3 flex flex-col items-center gap-3">
-      
+      {/* Honeypot */}
       <input
         type="text"
         name="website_verification_hidden"
         value={honeypot}
         onChange={(e) => setHoneypot(e.target.value)}
         autoComplete="off"
-        data-lpignore="true"
-        data-form-type="other"
         tabIndex={-1}
         style={{
-          position: 'absolute',
-          left: '-9999px',
-          width: '1px',
-          height: '1px',
+          position: "absolute",
+          left: "-9999px",
+          width: "1px",
+          height: "1px",
           opacity: 0,
-          pointerEvents: 'none',
-          visibility: 'hidden'
+          pointerEvents: "none",
+          visibility: "hidden",
         }}
         aria-hidden="true"
       />
 
+      {/* Turnstile */}
       {inputText.trim() && cooldown === 0 && (
-        <div className="mb-1">
-          <Turnstile 
-            ref={turnstileRef}
-            siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
-            onSuccess={(token) => setCaptchaToken(token)}
-            theme={isDark ? 'dark' : 'light'}
-            size="compact"
-          />
+        <div className="mb-1 text-xs text-center">
+          <div
+            className={`${
+              isDark ? "bg-zinc-900/70" : "bg-gray-200"
+            } px-3 py-2 rounded`}
+          >
+            {!TURNSTILE_SITE_KEY ? (
+              <div className="text-[11px] text-red-500">
+                Missing VITE_TURNSTILE_SITE_KEY
+              </div>
+            ) : (
+              <div ref={turnstileDivRef} />
+            )}
+          </div>
         </div>
       )}
 
-      {(isNearDailyLimit || isNearHourlyLimit || dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR) && (
-        <div className={`text-[10px] px-4 py-2 rounded-full backdrop-blur-md shadow-lg ${
-          dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR
-            ? 'bg-red-500/90 text-white animate-pulse'
-            : 'bg-orange-500/90 text-white'
-        }`}>
-          {dailyPostCount >= MAX_POSTS_PER_DAY 
+      {(isNearDailyLimit ||
+        isNearHourlyLimit ||
+        dailyPostCount >= MAX_POSTS_PER_DAY ||
+        hourlyPostCount >= MAX_POSTS_PER_HOUR) && (
+        <div
+          className={`text-[10px] px-4 py-2 rounded-full backdrop-blur-md shadow-lg ${
+            dailyPostCount >= MAX_POSTS_PER_DAY ||
+            hourlyPostCount >= MAX_POSTS_PER_HOUR
+              ? "bg-red-500/90 text-white animate-pulse"
+              : "bg-orange-500/90 text-white"
+          }`}
+        >
+          {dailyPostCount >= MAX_POSTS_PER_DAY
             ? `Daily limit reached (${dailyPostCount}/${MAX_POSTS_PER_DAY}). Try again tomorrow.`
             : hourlyPostCount >= MAX_POSTS_PER_HOUR
             ? `Hourly limit reached (${hourlyPostCount}/${MAX_POSTS_PER_HOUR}). Please wait.`
             : isNearDailyLimit
             ? `⚠️ Daily: ${dailyPostCount}/${MAX_POSTS_PER_DAY} posts used`
-            : `⚠️ Hourly: ${hourlyPostCount}/${MAX_POSTS_PER_HOUR} posts used`
-          }
+            : `⚠️ Hourly: ${hourlyPostCount}/${MAX_POSTS_PER_HOUR} posts used`}
         </div>
       )}
 
       {error && (
-        <div className="bg-red-500/90 text-white text-[10px] px-4 py-2 rounded-full backdrop-blur-md shadow-lg animate-bounce">
+        <div className="bg-red-500/90 text-white text-[10px] px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
           {error}
         </div>
       )}
 
       {inputText.trim() && (
         <div className="flex flex-wrap justify-center items-center gap-2">
-          <div className={`flex items-center gap-2 p-1 rounded-xl backdrop-blur-md border ${
-            isDark ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm'
-          }`}>
+          <div
+            className={`flex items-center gap-2 p-1 rounded-xl backdrop-blur-md border ${
+              isDark
+                ? "bg-zinc-900/80 border-white/5"
+                : "bg-white/80 border-gray-200 shadow-sm"
+            }`}
+          >
             <button
               onClick={() => onLocationModeToggle(true)}
               className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
-                useCurrentLocation ? 'bg-indigo-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
+                useCurrentLocation
+                  ? "bg-indigo-600 text-white"
+                  : isDark
+                  ? "text-zinc-500"
+                  : "text-gray-400"
               }`}
             >
               GPS Mode
@@ -325,18 +536,28 @@ export default function BottomDock({
             <button
               onClick={() => onLocationModeToggle(false)}
               className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all ${
-                !useCurrentLocation ? 'bg-orange-600 text-white' : isDark ? 'text-zinc-500' : 'text-gray-400'
+                !useCurrentLocation
+                  ? "bg-orange-600 text-white"
+                  : isDark
+                  ? "text-zinc-500"
+                  : "text-gray-400"
               }`}
             >
               {selectedLocation ? "📍 Location Set" : "Select on Map"}
             </button>
           </div>
 
-          <div className={`flex items-center px-3 py-1.5 rounded-xl backdrop-blur-md border ${
-            isDark ? 'bg-zinc-900/80 border-white/5' : 'bg-white/80 border-gray-200 shadow-sm'
-          }`}>
-            <span className="text-[9px] uppercase tracking-tighter text-zinc-500 mr-2">PIN:</span>
-            <input 
+          <div
+            className={`flex items-center px-3 py-1.5 rounded-xl backdrop-blur-md border ${
+              isDark
+                ? "bg-zinc-900/80 border-white/5"
+                : "bg-white/80 border-gray-200 shadow-sm"
+            }`}
+          >
+            <span className="text-[9px] uppercase tracking-tighter text-zinc-500 mr-2">
+              PIN:
+            </span>
+            <input
               type="password"
               maxLength={4}
               value={postPin}
@@ -350,60 +571,104 @@ export default function BottomDock({
 
       <div className="flex flex-col sm:flex-row items-center justify-center gap-2 w-full">
         <div className="flex gap-2">
-          {['About', 'Help', 'Donate'].map((label) => (
-            <button 
-              key={label}
-              onClick={label === 'About' ? onAboutClick : label === 'Help' ? onContactClick : onDonateClick} 
+          {[
+            { label: "About", onClick: onAboutClick },
+            { label: "Help", onClick: onContactClick },
+            { label: "Donate", onClick: onDonateClick },
+            ...(onSearchClick ? [{ label: "Search", onClick: onSearchClick }] : []),
+          ].map((btn) => (
+            <button
+              key={btn.label}
+              onClick={btn.onClick}
               className={`px-4 py-3 rounded-xl text-[9px] uppercase tracking-widest border transition-all ${
-                label === 'Donate' 
-                  ? isDark ? 'bg-amber-900/20 border-amber-500/20 text-amber-500' : 'bg-amber-50 border-amber-200 text-amber-600'
-                  : isDark ? 'bg-zinc-900/60 border-white/5 text-zinc-500' : 'bg-white border-gray-200 text-gray-500'
+                btn.label === "Donate"
+                  ? isDark
+                    ? "bg-amber-900/20 border-amber-500/20 text-amber-500"
+                    : "bg-amber-50 border-amber-200 text-amber-600"
+                  : isDark
+                  ? "bg-zinc-900/60 border-white/5 text-zinc-500"
+                  : "bg-white border-gray-200 text-gray-500"
               }`}
             >
-              {label}
+              {btn.label}
             </button>
           ))}
         </div>
 
-        <div className={`border p-1.5 rounded-2xl flex items-center backdrop-blur-3xl w-full sm:min-w-[450px] relative ${
-          isDark ? 'bg-zinc-900/40 border-white/5' : 'bg-white border-gray-200 shadow-xl'
-        }`}>
+        <div
+          className={`border p-1.5 rounded-2xl flex items-center backdrop-blur-3xl w-full sm:min-w-[450px] relative ${
+            isDark
+              ? "bg-zinc-900/40 border-white/5"
+              : "bg-white border-gray-200 shadow-xl"
+          }`}
+        >
           <input
+            ref={inputRef}
             value={inputText}
-            disabled={cooldown > 0 || isPosting || dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR}
-            onChange={(e) => setInputText(e.target.value.slice(0, CHAR_LIMIT))}
+            onFocus={onFocus}
+            disabled={
+              cooldown > 0 ||
+              isPosting ||
+              dailyPostCount >= MAX_POSTS_PER_DAY ||
+              hourlyPostCount >= MAX_POSTS_PER_HOUR
+            }
+            onChange={handleTextChange}
             placeholder={
-              dailyPostCount >= MAX_POSTS_PER_DAY ? "Daily limit reached..." :
-              hourlyPostCount >= MAX_POSTS_PER_HOUR ? "Hourly limit reached..." :
-              cooldown > 0 ? `Cooldown active...` : 
-              "Share something unspoken..."
+              dailyPostCount >= MAX_POSTS_PER_DAY
+                ? "Daily limit reached..."
+                : hourlyPostCount >= MAX_POSTS_PER_HOUR
+                ? "Hourly limit reached..."
+                : cooldown > 0
+                ? "Cooldown active..."
+                : "Share something unspoken..."
             }
             className={`flex-1 px-4 py-2 outline-none text-sm bg-transparent transition-colors ${
-              isDark 
-                ? 'text-white placeholder:text-zinc-600'
-                : 'text-zinc-900 placeholder:text-zinc-400'
-            } ${(cooldown > 0 || dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR) ? 'opacity-30' : 'opacity-100'}`}
+              isDark
+                ? "text-white placeholder:text-zinc-600"
+                : "text-zinc-900 placeholder:text-zinc-400"
+            } ${
+              cooldown > 0 ||
+              dailyPostCount >= MAX_POSTS_PER_DAY ||
+              hourlyPostCount >= MAX_POSTS_PER_HOUR
+                ? "opacity-30"
+                : "opacity-100"
+            }`}
           />
 
           {inputText && (
-            <div className={`absolute right-24 text-[9px] font-mono ${isNearLimit ? 'text-orange-500 font-bold' : 'text-zinc-500'}`}>
+            <div
+              className={`absolute right-24 text-[9px] font-mono ${
+                isNearLimit
+                  ? "text-orange-500 font-bold"
+                  : "text-zinc-500"
+              }`}
+            >
               {inputText.length}/{CHAR_LIMIT}
             </div>
           )}
-          
+
           <button
             onClick={handlePost}
             disabled={!canPost()}
             className={`px-6 py-3 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all ${
-              cooldown > 0 || dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR
-                ? 'bg-zinc-800 text-zinc-600' 
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95'
+              cooldown > 0 ||
+              dailyPostCount >= MAX_POSTS_PER_DAY ||
+              hourlyPostCount >= MAX_POSTS_PER_HOUR
+                ? "bg-zinc-800 text-zinc-600"
+                : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg active:scale-95"
             } disabled:opacity-20`}
           >
-            {isPosting ? '...' : 
-             dailyPostCount >= MAX_POSTS_PER_DAY || hourlyPostCount >= MAX_POSTS_PER_HOUR ? 'LIMIT' :
-             cooldown > 0 ? `${Math.floor(cooldown/60)}:${(cooldown%60).toString().padStart(2,'0')}` : 
-             'Post'}
+            {isPosting
+              ? "..."
+              : dailyPostCount >= MAX_POSTS_PER_DAY ||
+                hourlyPostCount >= MAX_POSTS_PER_HOUR
+              ? "LIMIT"
+              : cooldown > 0
+              ? `${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(
+                  2,
+                  "0"
+                )}`
+              : "Post"}
           </button>
         </div>
       </div>

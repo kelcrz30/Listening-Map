@@ -31,6 +31,7 @@ import NotificationBell from "./components/NotificationBell";
 import MentalHealthModal from './components/MentalHealthModal';
 import { checkForCrisisLanguage } from './utils/mentalHealthDetector';
 import { generateFingerprint, checkRateLimitClientSide, logAction } from "./utils/antiSpam";
+import { getMySecrets, addMySecret } from "./utils/mySecrets";
 
 export default function App() {
   return (
@@ -64,133 +65,142 @@ function AppContent() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // --- DATABASE & REALTIME LOGIC ---
-  useEffect(() => {
-    const fetchSecrets = async () => {
-      // ✅ REMOVED .eq('is_visible', true) - Now we handle visibility client-side!
-      const { data, error } = await supabase
-        .from('unspoken_words')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(500);
-      
-      if (error) {
-        console.error('❌ [FETCH] Error:', error);
-      } else {
-        // ✅ Filter shadow-banned posts on the client
-        const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-        
-        const visibleSecrets = data.filter(post => {
-          // Show if post is public OR if it's the user's own post
-          return post.is_visible !== true || mySecrets.includes(post.id);
-        });
-        
-        setSecrets(visibleSecrets || []);
-      }
-    };
-      
-    fetchSecrets();
 
-    const sessionUserId = `user-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const channel = supabase.channel('global_presence', {
-      config: { 
-        presence: { key: sessionUserId }
-      }
-    });
+  const readMySecrets = () => {
+  try {
+    return JSON.parse(localStorage.getItem("my_secrets") || "[]");
+  } catch {
+    return [];
+  }
+};
 
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const count = Object.keys(channel.presenceState()).length;
-        setOnlineCount(count); 
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'unspoken_words'
-      }, (payload) => {
-        
-        // --- HANDLE NEW POSTS ---
-        if (payload.eventType === 'INSERT') {
+  const isPublicPost = (post) =>
+    post?.is_visible === true && post?.is_flagged !== true;
+
+  const shouldShowPost = (post, mySecrets) =>
+    isPublicPost(post) || mySecrets.includes(post.id);
+useEffect(() => {
+
+
+  const fetchSecrets = async () => {
+    const { data, error } = await supabase
+      .from("unspoken_words")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (error) {
+      console.error("❌ [FETCH] Error:", error);
+      return;
+    }
+
+    const mySecrets = readMySecrets();
+    const visibleSecrets = (data || []).filter((post) =>
+      shouldShowPost(post, mySecrets)
+    );
+
+
+
+    setSecrets(visibleSecrets);
+  };
+
+  // first load
+  fetchSecrets();
+
+  // ✅ polling fallback (fixes “false not updating” even if realtime misses it)
+  const poll = setInterval(fetchSecrets, 5000);
+
+  const sessionUserId = `user-${Math.random().toString(36).slice(2, 11)}`;
+
+  const channel = supabase.channel("global_presence", {
+    config: { presence: { key: sessionUserId } },
+  });
+
+  channel
+    .on("presence", { event: "sync" }, () => {
+      const count = Object.keys(channel.presenceState()).length;
+      setOnlineCount(count);
+    })
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "unspoken_words" },
+      (payload) => {
+        console.log("[RT]", payload.eventType, payload.new?.id, payload.new?.is_visible);
+
+        const mySecrets = readMySecrets();
+
+        if (payload.eventType === "INSERT") {
           const completePost = {
             ...payload.new,
             nods: payload.new.nods ?? 0,
             replies: Array.isArray(payload.new.replies) ? payload.new.replies : [],
-            created_at: payload.new.created_at || new Date().toISOString()
+            created_at: payload.new.created_at || new Date().toISOString(),
           };
 
-          // Validate required fields
           if (!completePost.text || completePost.lat === undefined || completePost.lng === undefined) {
-            console.error('❌ [INSERT] Missing fields:', completePost);
+            console.error("❌ [INSERT] Missing fields:", completePost);
             return;
           }
 
-          // ✅ FIXED: Check if this is the user's own post OR if it's public
-          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-          const shouldShow = completePost.is_visible !== false || mySecrets.includes(completePost.id);
+          if (!shouldShowPost(completePost, mySecrets)) return;
 
-          if (shouldShow) {
-            setSecrets((prev) => {
-              if (prev.some(s => s.id === completePost.id)) {
-                return prev;
-              }
-              return [completePost, ...prev];
-            });
-            
-            // Only show notification for public posts (not shadow-banned)
-            if (completePost.is_visible !== false) {
-              setNotification("A new heart has shared a secret...");
-              setTimeout(() => setNotification(null), 4000);
-            }
+          setSecrets((prev) => {
+            if (prev.some((s) => s.id === completePost.id)) return prev;
+            return [completePost, ...prev];
+          });
+
+          if (isPublicPost(completePost)) {
+            setNotification("A new heart has shared a secret...");
+            setTimeout(() => setNotification(null), 4000);
           }
         }
-        
-        // --- HANDLE UPDATES (replies, nods, is_listening) ---
-        if (payload.eventType === 'UPDATE') {
-          const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-          
+
+        if (payload.eventType === "UPDATE") {
+          const updated = payload.new;
+
           setSecrets((prev) => {
-            return prev.map(s => {
-              if (s.id !== payload.new.id) return s;
-              
-              // Merge old data with new, ensuring we keep all fields
-              return {
-                ...s,
-                ...payload.new,
-                nods: payload.new.nods ?? s.nods ?? 0,
-                replies: Array.isArray(payload.new.replies) ? payload.new.replies : (s.replies || []),
-                is_listening: payload.new.is_listening ?? s.is_listening ?? false
-              };
-            }).filter(s => {
-              // ✅ FIXED: Keep shadow-banned posts if they belong to this user
-              return s.is_visible !== false || mySecrets.includes(s.id);
-            });
+            const next = prev
+              .map((s) => {
+                if (s.id !== updated.id) return s;
+
+                return {
+                  ...s,
+                  ...updated,
+                  nods: updated.nods ?? s.nods ?? 0,
+                  replies: Array.isArray(updated.replies) ? updated.replies : s.replies || [],
+                  is_listening: updated.is_listening ?? s.is_listening ?? false,
+                };
+              })
+              .filter((s) => shouldShowPost(s, mySecrets));
+
+            return next;
           });
-          
-          // Check if this is our post and notify
-          if (mySecrets.includes(payload.new.id)) {
+
+          if (mySecrets.includes(updated.id)) {
             setNotification("Someone whispered back to your secret...");
             setTimeout(() => setNotification(null), 4000);
           }
         }
 
-        // --- HANDLE DELETIONS ---
-        if (payload.eventType === 'DELETE') {
-          setSecrets((prev) => prev.filter(s => s.id !== payload.old.id));
+        if (payload.eventType === "DELETE") {
+          setSecrets((prev) => prev.filter((s) => s.id !== payload.old.id));
         }
-      })
-      .subscribe(async (status) => {
-        
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ online_at: new Date().toISOString() });
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error');
-        }
-      });
+      }
+    )
+    .subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await channel.track({ online_at: new Date().toISOString() });
+      } else if (status === "CHANNEL_ERROR") {
+        console.error("❌ Channel error");
+      }
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  return () => {
+    clearInterval(poll);           // ✅ IMPORTANT
+    supabase.removeChannel(channel);
+  };
+}, []);
+
 
   // --- ACTION HANDLERS ---
   const handleNewPostSuccess = (newPost) => {
@@ -207,10 +217,7 @@ function AppContent() {
     setSelectedLocation(null);
     setIsPlacementMode(false);
 
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
-    if (!mySecrets.includes(newPost.id)) {
-      localStorage.setItem("my_secrets", JSON.stringify([...mySecrets, newPost.id]));
-    }
+ addMySecret(newPost.id);
 
     setTimeout(() => setNotification(null), 3000);
   };
@@ -257,7 +264,7 @@ function AppContent() {
   };
 
   const handleNod = async (id) => {
-    const mySecrets = JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    const mySecrets = getMySecrets();
     const noddedSecrets = JSON.parse(localStorage.getItem("nodded_secrets") || "[]");
 
     if (mySecrets.includes(id)) {
@@ -369,6 +376,45 @@ function AppContent() {
     }
   };
 
+  const handleToggleVisibility = async (secretId, nextVisible) => {
+  const mySecrets = readMySecrets();
+
+  // ✅ 1) OPTIMISTIC UI UPDATE (instant)
+  setSecrets((prev) => {
+    const next = prev
+      .map((s) => (s.id === secretId ? { ...s, is_visible: nextVisible } : s))
+      .filter((s) => shouldShowPost(s, mySecrets)); // keep filtering consistent
+    return next;
+  });
+
+  try {
+    // ✅ 2) REAL DB UPDATE
+    const { error } = await supabase
+      .from("unspoken_words")
+      .update({ is_visible: nextVisible })
+      .eq("id", secretId);
+
+    if (error) throw error;
+
+    // optional tiny toast
+    setNotification(nextVisible ? "Now public." : "Now hidden.");
+    setTimeout(() => setNotification(null), 2000);
+  } catch (err) {
+    console.error("❌ Toggle visibility failed:", err);
+
+    // ❌ 3) ROLLBACK if DB fails
+    setSecrets((prev) => {
+      const next = prev
+        .map((s) => (s.id === secretId ? { ...s, is_visible: !nextVisible } : s))
+        .filter((s) => shouldShowPost(s, mySecrets));
+      return next;
+    });
+
+    setNotification("Failed to update visibility. Reverted.");
+    setTimeout(() => setNotification(null), 3000);
+  }
+};
+
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
       <Atmosphere isNodding={isNodding} isDark={isDark} />
@@ -458,6 +504,7 @@ function AppContent() {
           activeSecretId={activeSecretId}
           setActiveSecretId={setActiveSecretId}
           onToggleListening={handleToggleListening} 
+           onToggleVisibility={handleToggleVisibility}
         />
       </MapContainer>
       

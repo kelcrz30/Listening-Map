@@ -3,10 +3,12 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
   import { getMemoryIcon } from "../MapConfig";
   import { formatRelativeTime } from "../utils/timeUtils";
   import { Turnstile } from '@marsidev/react-turnstile';
+  import { getMySecrets, addMySecret } from "../utils/mySecrets";
   import ListeningButton from "./ListeningButton";
   import { checkText } from "../utils/wordFilter";
 import L from 'leaflet';
   import DeleteSecretModal from './DeleteSecretModal';
+  
 export default function MapMarkers({
   secrets,
   visited,
@@ -49,10 +51,25 @@ const echoedSecrets = useMemo(() =>
     [activePopupId] // This ensures they refresh when a popup opens
   );
 
-  const mySecrets = useMemo(() => 
-    JSON.parse(localStorage.getItem("my_secrets") || "[]"),
-    [activePopupId]
-  );
+const [mySecrets, setMySecrets] = useState(() =>
+  JSON.parse(localStorage.getItem("my_secrets") || "[]")
+);
+
+useEffect(() => {
+  const sync = () => {
+    setMySecrets(JSON.parse(localStorage.getItem("my_secrets") || "[]"));
+  };
+
+  window.addEventListener("storage", sync); // other tabs
+  window.addEventListener("my_secrets_updated", sync); // same tab ✅
+
+  return () => {
+    window.removeEventListener("storage", sync);
+    window.removeEventListener("my_secrets_updated", sync);
+  };
+}, []);
+
+
   
     useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -235,8 +252,11 @@ const clusteredMarkers = useMemo(() => {
     const isInsideBounds = bounds.contains([s.lat, s.lng]);
     
     // Logic: Show if it's public (is_visible) OR if it belongs to this user
-    const shouldBeVisible = s.is_visible !== false || mySecrets.includes(s.id);
+const shouldBeVisibleForPublic =
+  s.is_visible !== false && s.is_flagged !== true;
 
+const shouldBeVisible =
+  shouldBeVisibleForPublic || mySecrets.includes(s.id);
     return isInsideBounds && shouldBeVisible;
   });
 
@@ -535,7 +555,10 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
       // SHADOWBAN LOGIC: 
       // 1. Show if the reply is marked visible
       // 2. OR show if the USER is the owner of the main secret (my_secrets)
-      return reply.is_visible !== false || mySecrets.includes(currentSecret.id);
+      return (
+  (reply.is_visible !== false && reply.is_flagged !== true) ||
+  mySecrets.includes(currentSecret.id)
+);
     })
     .map((reply, index) => (
       <div key={`reply-${currentSecret.id}-${index}`} className="border-b border-white/5 last:border-0 pb-2">

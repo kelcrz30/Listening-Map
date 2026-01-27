@@ -37,3 +37,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# My Private Admin Dashboard
+admin-dashboard.html
+.vercel
+.env*.local
+
+# Private Admin Dashboard - NEVER COMMIT THIS
+src/admin/
+admin-dashboard.html
+admin-index*.html
+**/admin/
