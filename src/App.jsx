@@ -468,13 +468,16 @@ useEffect(() => {
           markAsVisited(id);
         }}
       />
-
-      <MapContainer 
-        center={[20, 0]} 
-        zoom={3} 
-        style={{ height: "100%", width: "100%", background: 'transparent' }}
-        zoomControl={false}
-      >
+<MapContainer 
+  center={[20, 0]} 
+  zoom={3} 
+  // Add these three props:
+  minZoom={2}
+  maxBounds={[[-90, -180], [90, 180]]}
+  maxBoundsViscosity={1.0}
+  style={{ height: "100%", width: "100%", background: 'transparent' }}
+  zoomControl={false}
+>
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
         <WorldLabel isDark={isDark} />
         <MapController secrets={secrets} targetPos={targetPos} setZoomLevel={setZoomLevel} />
