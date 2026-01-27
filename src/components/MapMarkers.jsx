@@ -29,6 +29,8 @@ export default function MapMarkers({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [secretToDelete, setSecretToDelete] = useState(null);
   const [whisperCaptchaToken, setWhisperCaptchaToken] = useState(null);
+  const [turnstileReady, setTurnstileReady] = useState({});
+
     const map = useMap();
     const scrollRef = useRef(null);
     const popupRef = useRef(null);
@@ -573,89 +575,199 @@ const currentSecret = secrets.find(sec => sec.id === baseSecret.id) || baseSecre
 }
   </div>
 
-  {/* Whisper input */}
-  {replyCount < 10 ? (
-    <div className="flex flex-col gap-2">
-      
-      {/* 🔒 SILENT CAPTCHA LAYER */}
-      <div className="flex justify-center scale-[0.65] origin-center h-2 overflow-hidden">
-        <Turnstile 
-          siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
-          options={{
-            appearance: 'interaction-only', 
-          }}
-          onSuccess={(token) => setWhisperCaptchaToken(token)}
-          theme={isDark ? 'dark' : 'light'}
-        />
-      </div>
 
-  
 
-        {/* Display the error message if profanity is detected */}
-        {whisperError && (
-          <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse mb-1 block text-center">
-            {whisperError}
-          </span>
-        )}
-        
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Whisper a reply..."
-            className={`flex-1 border rounded-lg px-3 py-1.5 text-[10px] outline-none ${
-              isDark
-                ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
-                : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
-            }`}
-            value={whisperInputs[currentSecret.id] || ""}
-            onChange={(e) =>
-              setWhisperInputs((prev) => ({
-                ...prev,
-                [currentSecret.id]: e.target.value,
-              }))
-            }
-          />
-          <button
-            onClick={() => {
-              const inputValue = whisperInputs[currentSecret.id]?.trim();
-        
-      // 1. Security Check
-      if (!whisperCaptchaToken) return;
 
-      if (inputValue) {
-        // 2. Profanity Check
-        const filterResult = checkText(inputValue);
-        if (filterResult.isProfane) {
-          setWhisperError("The void rejects this language");
-          setTimeout(() => setWhisperError(null), 3000); 
-          return; // Stop execution
+{replyCount < 10 ? (
+  <div className="flex flex-col gap-2">
+    
+    {/* Display error message */}
+    {whisperError && (
+      <span className="text-[8px] text-red-500 font-bold uppercase animate-pulse mb-1 block text-center">
+        {whisperError}
+      </span>
+    )}
+    
+    {/* Main input - ALWAYS enabled */}
+    <div className="flex gap-2">
+      <input
+        type="text"
+        placeholder="Whisper a reply..."
+        className={`flex-1 border rounded-lg px-3 py-1.5 mb- text-[10px] outline-none ${
+          isDark
+            ? "bg-white/5 border-white/10 text-white placeholder:text-zinc-600"
+            : "bg-gray-50 border-gray-200 placeholder:text-gray-400"
+        }`}
+        value={whisperInputs[currentSecret.id] || ""}
+        onChange={(e) =>
+          setWhisperInputs((prev) => ({
+            ...prev,
+            [currentSecret.id]: e.target.value,
+          }))
         }
+        onKeyPress={(e) => {
+          // Allow Enter to trigger send
+          if (e.key === 'Enter' && whisperInputs[currentSecret.id]?.trim()) {
+            e.preventDefault();
+            document.getElementById(`send-btn-${currentSecret.id}`)?.click();
+          }
+        }}
+      />
+      <button
+        id={`send-btn-${currentSecret.id}`}
+        onClick={() => {
+          const inputValue = whisperInputs[currentSecret.id]?.trim();
+          
+          if (!inputValue) return;
 
-        // 3. Success - Send to Database
-        onWhisper(currentSecret.id, inputValue, whisperCaptchaToken);
-        setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
-        setWhisperCaptchaToken(null); 
-      }
-    }}
-    disabled={!whisperCaptchaToken || !whisperInputs[currentSecret.id]?.trim()}
-    className={`text-[8px] font-bold uppercase tracking-widest transition-colors ${
-      !whisperCaptchaToken ? "opacity-20 cursor-not-allowed" : ""
-    } ${
-      isDark ? "text-orange-400 hover:text-orange-300" : "text-orange-600 hover:text-orange-700"
-    }`}
-  >
-    Reply
-  </button>
-</div>
-      </div>
+          // ✅ STEP 1: Check profanity first (instant feedback)
+          const filterResult = checkText(inputValue);
+          if (filterResult.isProfane) {
+            setWhisperError("The void rejects this language");
+            setTimeout(() => setWhisperError(null), 3000); 
+            return;
+          }
 
-  ) : (
-    <div className={`py-2 px-3 rounded-lg border text-center ${isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"}`}>
-      <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
-        This thread has reached its limit
-      </p>
+          // ✅ STEP 2: If verified, send immediately
+          if (whisperCaptchaToken) {
+            onWhisper(currentSecret.id, inputValue, whisperCaptchaToken);
+            setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
+            setWhisperCaptchaToken(null);
+            setTurnstileReady(prev => ({ 
+              ...prev, 
+              [currentSecret.id]: false, 
+              [`show_${currentSecret.id}`]: false 
+            }));
+            return;
+          }
+
+          // ✅ STEP 3: No token yet? Show verification
+          setTurnstileReady(prev => ({ ...prev, [`show_${currentSecret.id}`]: true }));
+        }}
+        disabled={!whisperInputs[currentSecret.id]?.trim()}
+        className={`text-[8px] font-bold uppercase tracking-widest transition-all px-3 whitespace-nowrap ${
+          !whisperInputs[currentSecret.id]?.trim()
+            ? "opacity-20 cursor-not-allowed" 
+            : isDark
+            ? "text-orange-400 hover:text-orange-300"
+            : "text-orange-600 hover:text-orange-700"
+        }`}
+      >
+        Send
+      </button>
     </div>
-  )}
+
+    {/* 🔒 VERIFICATION UI - Only shows after clicking Send */}
+    {turnstileReady[`show_${currentSecret.id}`] && !whisperCaptchaToken && (
+      <div className={`relative flex flex-col items-center gap-2 py-3 px-3 rounded-lg border animate-in fade-in duration-200 ${
+        isDark 
+          ? "bg-orange-500/10 border-orange-500/20" 
+          : "bg-orange-50 border-orange-200"
+      }`}>
+        
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+              isDark ? "bg-orange-400" : "bg-orange-600"
+            }`} style={{ animationDelay: "0ms" }} />
+            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+              isDark ? "bg-orange-400" : "bg-orange-600"
+            }`} style={{ animationDelay: "150ms" }} />
+            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+              isDark ? "bg-orange-400" : "bg-orange-600"
+            }`} style={{ animationDelay: "300ms" }} />
+          </div>
+          
+          <span className={`text-[9px] uppercase tracking-widest font-bold ${
+            isDark ? "text-orange-400" : "text-orange-600"
+          }`}>
+            Please verify you're human
+          </span>
+        </div>
+
+        {/* Hidden Turnstile that auto-verifies */}
+        <div className="absolute -left-[9999px] opacity-0 pointer-events-none">
+          <Turnstile 
+            key={`turnstile-${currentSecret.id}-${Date.now()}`}
+            siteKey="0x4AAAAAACNNuHEbwy3hS-LX" 
+            options={{
+              theme: isDark ? 'dark' : 'light',
+              size: 'compact',
+            }}
+            onSuccess={(token) => {
+              setWhisperCaptchaToken(token);
+              setTurnstileReady(prev => ({ 
+                ...prev, 
+                [currentSecret.id]: true,
+                [`show_${currentSecret.id}`]: false
+              }));
+              
+              // ✅ AUTO-SEND after verification
+              setTimeout(() => {
+                const inputValue = whisperInputs[currentSecret.id]?.trim();
+                if (inputValue && token) {
+                  onWhisper(currentSecret.id, inputValue, token);
+                  setWhisperInputs((prev) => ({ ...prev, [currentSecret.id]: "" }));
+                  setWhisperCaptchaToken(null);
+                  setTurnstileReady(prev => ({ 
+                    ...prev, 
+                    [currentSecret.id]: false, 
+                    [`show_${currentSecret.id}`]: false 
+                  }));
+                }
+              }, 300); // Small delay for smooth UX
+            }}
+            onError={() => {
+              setWhisperCaptchaToken(null);
+              setTurnstileReady(prev => ({ ...prev, [`show_${currentSecret.id}`]: false }));
+              setWhisperError("Verification failed. Please try again.");
+              setTimeout(() => setWhisperError(null), 3000);
+            }}
+            onExpire={() => {
+              setWhisperCaptchaToken(null);
+              setTurnstileReady(prev => ({ 
+                ...prev, 
+                [currentSecret.id]: false
+              }));
+              setWhisperError("Verification expired. Please send again.");
+              setTimeout(() => setWhisperError(null), 3000);
+            }}
+          />
+        </div>
+
+        {/* Helper text */}
+        <p className={`text-[7px] uppercase tracking-wider ${
+          isDark ? "text-orange-400/60" : "text-orange-600/60"
+        }`}>
+          Your message will send automatically after verification
+        </p>
+      </div>
+    )}
+
+    {/* ✅ Brief success flash (optional - shows before auto-sending) */}
+    {whisperCaptchaToken && turnstileReady[currentSecret.id] && (
+      <div className={`flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg animate-in fade-in duration-100 ${
+        isDark 
+          ? "bg-green-500/10" 
+          : "bg-green-50"
+      }`}>
+        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+        <span className="text-[9px] uppercase tracking-widest text-green-500 font-bold">
+          Verified • Sending...
+        </span>
+      </div>
+    )}
+  </div>
+) : (
+  <div className={`py-2 px-3 rounded-lg border text-center ${
+    isDark ? "bg-red-500/5 border-red-500/20" : "bg-red-50 border-red-100"
+  }`}>
+    <p className="text-[9px] uppercase tracking-tighter text-red-500/60 font-bold">
+      This thread has reached its limit
+    </p>
+  </div>
+)}
 </div>
 
                         <div

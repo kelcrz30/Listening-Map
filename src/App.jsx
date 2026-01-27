@@ -296,42 +296,60 @@ useEffect(() => {
     }
   };
 
-  const handleAddWhisper = async (id, whisperText, turnstileToken) => {
-    if (!whisperText.trim() || !turnstileToken) {
-      setNotification("Security check required.");
-      return;
-    }
+// ... (keeping all your imports and initial code the same)
 
-    try {
-      const fingerprint = await generateFingerprint();
+// Just replacing the handleAddWhisper function:
 
-      const { data, error } = await supabase.functions.invoke('whisper-secure', {
-        body: { 
-          postId: id, 
-          whisperText: whisperText.trim(),
-          turnstileToken: turnstileToken,
-          fingerprint: fingerprint
-        }
-      });
+const handleAddWhisper = async (id, whisperText, turnstileToken) => {
+  if (!whisperText.trim() || !turnstileToken) {
+    setNotification("Security check required.");
+    setTimeout(() => setNotification(null), 3000);
+    return;
+  }
 
-      if (error) {
-        const errorBody = await error.context.json();
-        throw new Error(errorBody.error || "Security block");
+  try {
+    const fingerprint = await generateFingerprint();
+
+    const { data, error } = await supabase.functions.invoke('whisper-secure', {
+      body: { 
+        postId: id, 
+        whisperText: whisperText.trim(),
+        turnstileToken: turnstileToken,
+        fingerprint: fingerprint
       }
+    });
 
-      const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-      if (!commented.includes(id)) {
-        localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
-      }
-
-      setNotification(data.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
-      setTimeout(() => setNotification(null), 3000);
+    // ✅ FIXED: Proper error handling for Supabase Functions
+    if (error) {
+      console.error('Whisper error:', error);
       
-    } catch (err) {
-      setNotification(err.message);
-      setTimeout(() => setNotification(null), 4000);
+      // Try to parse error message from different possible formats
+      let errorMessage = "Could not send whisper.";
+      
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      throw new Error(errorMessage);
     }
-  };
+
+    // Success handling
+    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+    if (!commented.includes(id)) {
+      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
+    }
+
+    setNotification(data?.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
+    setTimeout(() => setNotification(null), 3000);
+    
+  } catch (err) {
+    console.error('Whisper failed:', err);
+    setNotification(err.message || "The whisper faded into the void.");
+    setTimeout(() => setNotification(null), 4000);
+  }
+};
 
   const confirmDelete = async (pin) => {
     if (!deleteTargetId) return;

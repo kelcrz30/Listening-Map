@@ -15,7 +15,7 @@ export default function BottomDock({
   onAboutClick,
   onContactClick,
   onDonateClick,
-  onSearchClick, // ✅ optional: show Search button if you pass this prop
+  onSearchClick,
   onPostSuccess,
   isDark,
   useCurrentLocation,
@@ -30,33 +30,26 @@ export default function BottomDock({
   const [error, setError] = useState("");
   const [honeypot, setHoneypot] = useState("");
 
-  // Human signals (collect only — DO NOT block on client)
   const [firstKeystroke, setFirstKeystroke] = useState(null);
   const [keystrokeTimestamps, setKeystrokeTimestamps] = useState([]);
   const [hasPointerMoved, setHasPointerMoved] = useState(false);
   const [interactionScore, setInteractionScore] = useState(0);
 
-  // Local UX counters (backend must enforce real limits)
   const [dailyPostCount, setDailyPostCount] = useState(0);
   const [hourlyPostCount, setHourlyPostCount] = useState(0);
 
   const inputRef = useRef(null);
-
-  // Turnstile refs
   const turnstileDivRef = useRef(null);
   const turnstileWidgetIdRef = useRef(null);
   const turnstileReadyRef = useRef(false);
 
   const CHAR_LIMIT = 500;
   const MIN_TEXT_LENGTH = 2;
-const IS_DEV =
-  location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  const IS_DEV =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
-const MIN_INTERVAL_MINUTES = IS_DEV ? 0 : 2;
-
-const EDGE_FUNCTION_URL = "/api/create-post";
-
-
+  const MIN_INTERVAL_MINUTES = IS_DEV ? 0 : 2;
+  const EDGE_FUNCTION_URL = "/api/create-post";
   const MAX_POSTS_PER_DAY = 30;
   const MAX_POSTS_PER_HOUR = 25;
 
@@ -67,9 +60,7 @@ const EDGE_FUNCTION_URL = "/api/create-post";
   const isNearDailyLimit = dailyPostCount >= MAX_POSTS_PER_DAY * 0.8;
   const isNearHourlyLimit = hourlyPostCount >= MAX_POSTS_PER_HOUR * 0.75;
 
-  // ----------------------------
-  // Load Turnstile script once
-  // ----------------------------
+  // ✅ Load Turnstile script
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return;
 
@@ -100,7 +91,6 @@ const EDGE_FUNCTION_URL = "/api/create-post";
         script?.removeEventListener?.("load", onLoad);
       } catch {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [TURNSTILE_SITE_KEY]);
 
   const resetTurnstile = () => {
@@ -133,7 +123,6 @@ const EDGE_FUNCTION_URL = "/api/create-post";
       return;
     }
 
-    // avoid multiple renders (prevents "already loaded / imported multiple times")
     if (turnstileWidgetIdRef.current != null) return;
 
     setCaptchaToken(null);
@@ -143,8 +132,6 @@ const EDGE_FUNCTION_URL = "/api/create-post";
       {
         sitekey: TURNSTILE_SITE_KEY,
         theme: isDark ? "dark" : "light",
-        // For non-interactive widget types, Cloudflare still often needs "managed"
-        // But your dashboard is "Non-interactive", keep this:
         size: "normal",
         callback: (token) => setCaptchaToken(token || null),
         "expired-callback": () => setCaptchaToken(null),
@@ -155,12 +142,9 @@ const EDGE_FUNCTION_URL = "/api/create-post";
 
   useEffect(() => {
     renderTurnstile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputText, cooldown, isDark]);
 
-  // ----------------------------
-  // Human-signal collection (no blocking)
-  // ----------------------------
+  // ✅ Human signal collection
   useEffect(() => {
     let count = 0;
     const onMove = () => {
@@ -176,9 +160,7 @@ const EDGE_FUNCTION_URL = "/api/create-post";
 
   const onFocus = () => setInteractionScore((p) => p + 1);
 
-  // ----------------------------
-  // Local counters + cooldown
-  // ----------------------------
+  // ✅ Load counters
   useEffect(() => {
     const loadCounts = () => {
       const dailyData = localStorage.getItem("daily_posts");
@@ -219,6 +201,7 @@ const EDGE_FUNCTION_URL = "/api/create-post";
     return () => clearInterval(interval);
   }, []);
 
+  // ✅ Load cooldown on mount
   useEffect(() => {
     const saved = localStorage.getItem("post_cooldown");
     if (saved) {
@@ -230,6 +213,7 @@ const EDGE_FUNCTION_URL = "/api/create-post";
     }
   }, []);
 
+  // ✅ Cooldown timer
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => {
@@ -262,9 +246,6 @@ const EDGE_FUNCTION_URL = "/api/create-post";
     setHourlyPostCount(newHourly);
   };
 
-  // ----------------------------
-  // Typing metrics (send to backend)
-  // ----------------------------
   const calculateTypingMetrics = () => {
     if (keystrokeTimestamps.length < 2) {
       return {
@@ -315,7 +296,6 @@ const EDGE_FUNCTION_URL = "/api/create-post";
   const handlePost = async () => {
     if (!canPost()) return;
 
-    // Honeypot: pretend success (no leak)
     if (honeypot.trim() !== "") {
       setIsPosting(true);
       await new Promise((r) => setTimeout(r, 900));
@@ -351,76 +331,66 @@ const EDGE_FUNCTION_URL = "/api/create-post";
 
       const trimmedText = inputText.trim();
       const metrics = calculateTypingMetrics();
-const FORCE_BOT_TEST = false; // turn to false after testing
 
-const botMetrics = FORCE_BOT_TEST
-  ? {
-      typingSpeed: 10,         // super fast (<30)
-      typingVariance: 0,       // robotic (<100)
-      totalTypingTime: 500,    // too fast (<2000)
-      keystrokeCount: 25,      // enough to trigger checks
-      hasPointerMovement: false,
-      interactionScore: 0,
-    }
-  : {
-      typingSpeed: metrics.avgSpeed,
-      typingVariance: metrics.variance,
-      totalTypingTime: metrics.totalTypingTime,
-      keystrokeCount: keystrokeTimestamps.length,
-      hasPointerMovement: hasPointerMoved,
-      interactionScore,
-    };
+      // ✅ Remove FORCE_BOT_TEST - use real metrics
+      const botMetrics = {
+        typingSpeed: metrics.avgSpeed,
+        typingVariance: metrics.variance,
+        totalTypingTime: metrics.totalTypingTime,
+        keystrokeCount: keystrokeTimestamps.length,
+        hasPointerMovement: hasPointerMoved,
+        interactionScore,
+      };
 
       const resp = await fetch(EDGE_FUNCTION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({
-  text: trimmedText,
-  lat: parseFloat(Number(lat).toFixed(6)),
-  lng: parseFloat(Number(lng).toFixed(6)),
-  post_pin: postPin?.length === 4 ? postPin : null,
-  turnstileToken: captchaToken,
-  fingerprint,
-  timestamp: Date.now(),
-  honeypot,
-  requestId:
-    crypto?.randomUUID?.() ||
-    `req_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-  behaviorMetrics: botMetrics, // ✅ this is the test payload
-}),
-
+        body: JSON.stringify({
+          text: trimmedText,
+          lat: parseFloat(Number(lat).toFixed(6)),
+          lng: parseFloat(Number(lng).toFixed(6)),
+          post_pin: postPin?.length === 4 ? postPin : null,
+          turnstileToken: captchaToken,
+          fingerprint,
+          timestamp: Date.now(),
+          honeypot,
+          requestId:
+            crypto?.randomUUID?.() ||
+            `req_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+          behaviorMetrics: botMetrics,
+        }),
       });
 
       const result = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        // Keep errors generic (don’t teach attacker)
-if (resp.status === 429) {
-  if (!IS_DEV) {
-    const retrySecs = MIN_INTERVAL_MINUTES * 60;
-    localStorage.setItem(
-      "post_cooldown",
-      String(Date.now() + retrySecs * 1000)
-    );
-    setCooldown(retrySecs);
-  }
-}
+        // ✅ Sync cooldown from backend response
+        if (resp.status === 429) {
+          const waitSeconds = result.waitSeconds || (MIN_INTERVAL_MINUTES * 60);
+          if (!IS_DEV) {
+            localStorage.setItem(
+              "post_cooldown",
+              String(Date.now() + waitSeconds * 1000)
+            );
+            setCooldown(waitSeconds);
+          }
+        }
         throw new Error(result?.error || "Please try again later.");
       }
 
-      // success (even if backend shadowbanned, it returns success)
+      // ✅ Success - sync cooldown from backend
       updatePostCounts();
 
-if (!IS_DEV) {
-  const successCooldown = MIN_INTERVAL_MINUTES * 60;
-  localStorage.setItem(
-    "post_cooldown",
-    String(Date.now() + successCooldown * 1000)
-  );
-  setCooldown(successCooldown);
-}
+      const cooldownSeconds = result.cooldownSeconds || (MIN_INTERVAL_MINUTES * 60);
+      if (!IS_DEV) {
+        localStorage.setItem(
+          "post_cooldown",
+          String(Date.now() + cooldownSeconds * 1000)
+        );
+        setCooldown(cooldownSeconds);
+      }
 
-      // clear UI
+      // Clear UI
       setInputText("");
       setPostPin("");
       setHoneypot("");
@@ -430,7 +400,6 @@ if (!IS_DEV) {
       setHasPointerMoved(false);
       setInteractionScore(0);
 
-      // remove widget after post (prevents "hung widget" + "already loaded" spam)
       removeTurnstile();
 
       if (onPostSuccess) onPostSuccess(result.post);
@@ -445,7 +414,6 @@ if (!IS_DEV) {
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-5xl px-3 flex flex-col items-center gap-3">
-      {/* Honeypot */}
       <input
         type="text"
         name="website_verification_hidden"
@@ -465,7 +433,6 @@ if (!IS_DEV) {
         aria-hidden="true"
       />
 
-      {/* Turnstile */}
       {inputText.trim() && cooldown === 0 && (
         <div className="mb-1 text-xs text-center">
           <div
