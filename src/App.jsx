@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import { Analytics } from "@vercel/analytics/react";
-import { supabase } from "./supabaseClient";
 import { MAP_TILES } from "./MapConfig";
 import L from 'leaflet';
 import { checkText } from "./utils/wordFilter";
@@ -64,70 +63,58 @@ function AppContent() {
   const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // --- DATABASE & REALTIME LOGIC ---
-
   const readMySecrets = () => {
-  try {
-    return JSON.parse(localStorage.getItem("my_secrets") || "[]");
-  } catch {
-    return [];
-  }
-};
+    try {
+      return JSON.parse(localStorage.getItem("my_secrets") || "[]");
+    } catch {
+      return [];
+    }
+  };
 
   const isPublicPost = (post) =>
     post?.is_visible === true && post?.is_flagged !== true;
 
   const shouldShowPost = (post, mySecrets) =>
     isPublicPost(post) || mySecrets.includes(post.id);
-useEffect(() => {
 
-
+  // ✅ Fetch posts through API proxy
   const fetchSecrets = async () => {
-    const { data, error } = await supabase
-      .from("unspoken_words")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(500);
+    try {
+      const response = await fetch('/api/get-posts');
+      const result = await response.json();
+      
+      if (result.error) {
+        console.error("❌ [FETCH] Error:", result.error);
+        return;
+      }
 
-    if (error) {
-      console.error("❌ [FETCH] Error:", error);
-      return;
+      const mySecrets = readMySecrets();
+      const visibleSecrets = (result.data || []).filter((post) =>
+        shouldShowPost(post, mySecrets)
+      );
+
+      setSecrets(visibleSecrets);
+    } catch (err) {
+      console.error("Failed to fetch:", err);
     }
-
-    const mySecrets = readMySecrets();
-    const visibleSecrets = (data || []).filter((post) =>
-      shouldShowPost(post, mySecrets)
-    );
-
-
-
-    setSecrets(visibleSecrets);
   };
 
-  // first load
-  fetchSecrets();
+  useEffect(() => {
+    // Initial fetch
+    fetchSecrets();
 
-  // ✅ polling fallback (fixes “false not updating” even if realtime misses it)
-  const poll = setInterval(fetchSecrets, 5000);
+    // Polling fallback
+    const poll = setInterval(fetchSecrets, 5000);
 
-  const sessionUserId = `user-${Math.random().toString(36).slice(2, 11)}`;
-
-  const channel = supabase.channel("global_presence", {
-    config: { presence: { key: sessionUserId } },
-  });
-
-  channel
-    .on("presence", { event: "sync" }, () => {
-      const count = Object.keys(channel.presenceState()).length;
-      setOnlineCount(count);
-    })
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "unspoken_words" },
-      (payload) => {
-        console.log("[RT]", payload.eventType, payload.new?.id, payload.new?.is_visible);
-
+    // ✅ Server-Sent Events for realtime updates
+    const eventSource = new EventSource('/api/realtime');
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
         const mySecrets = readMySecrets();
+
+        console.log("[RT]", payload.eventType, payload.new?.id, payload.new?.is_visible);
 
         if (payload.eventType === "INSERT") {
           const completePost = {
@@ -185,26 +172,38 @@ useEffect(() => {
         if (payload.eventType === "DELETE") {
           setSecrets((prev) => prev.filter((s) => s.id !== payload.old.id));
         }
+      } catch (err) {
+        console.error("Realtime parse error:", err);
       }
-    )
-    .subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({ online_at: new Date().toISOString() });
-      } else if (status === "CHANNEL_ERROR") {
-        console.error("❌ Channel error");
+    };
+
+    eventSource.onerror = () => {
+      console.error("❌ Realtime connection error");
+      eventSource.close();
+    };
+
+    // ✅ Simple online counter (since we can't use Supabase presence)
+    const updateOnlineCount = async () => {
+      try {
+        const response = await fetch('/api/get-online-count');
+        const { count } = await response.json();
+        if (count) setOnlineCount(count);
+      } catch (err) {
+        console.error("Failed to get online count:", err);
       }
-    });
+    };
 
-  return () => {
-    clearInterval(poll);           // ✅ IMPORTANT
-    supabase.removeChannel(channel);
-  };
-}, []);
+    updateOnlineCount();
+    const onlineInterval = setInterval(updateOnlineCount, 30000); // Every 30s
 
+    return () => {
+      clearInterval(poll);
+      clearInterval(onlineInterval);
+      eventSource.close();
+    };
+  }, []);
 
-  // --- ACTION HANDLERS ---
   const handleNewPostSuccess = (newPost) => {
-    
     setSecrets((prev) => {
       if (prev.some(s => s.id === newPost.id)) {
         return prev;
@@ -216,9 +215,7 @@ useEffect(() => {
     setNotification("Your secret has been shared with the world.");
     setSelectedLocation(null);
     setIsPlacementMode(false);
-
- addMySecret(newPost.id);
-
+    addMySecret(newPost.id);
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -280,11 +277,16 @@ useEffect(() => {
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke('echo-pulse', {
-        body: { postId: id }
+      // ✅ Call through proxy
+      const response = await fetch('/api/echo-pulse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: id })
       });
 
-      if (error) throw error;
+      const result = await response.json();
+      
+      if (!response.ok) throw new Error(result.error || "Failed to echo");
 
       localStorage.setItem("nodded_secrets", JSON.stringify([...noddedSecrets, id]));
       triggerNodPulse();
@@ -296,81 +298,75 @@ useEffect(() => {
     }
   };
 
-// ... (keeping all your imports and initial code the same)
-
-// Just replacing the handleAddWhisper function:
-
-const handleAddWhisper = async (id, whisperText, turnstileToken) => {
-  if (!whisperText.trim() || !turnstileToken) {
-    setNotification("Security check required.");
-    setTimeout(() => setNotification(null), 3000);
-    return;
-  }
-
-  try {
-    const fingerprint = await generateFingerprint();
-
-    const { data, error } = await supabase.functions.invoke('whisper-secure', {
-      body: { 
-        postId: id, 
-        whisperText: whisperText.trim(),
-        turnstileToken: turnstileToken,
-        fingerprint: fingerprint
-      }
-    });
-
-    // ✅ FIXED: Proper error handling for Supabase Functions
-    if (error) {
-      console.error('Whisper error:', error);
-      
-      // Try to parse error message from different possible formats
-      let errorMessage = "Could not send whisper.";
-      
-      if (error.message) {
-        errorMessage = error.message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      throw new Error(errorMessage);
+  const handleAddWhisper = async (id, whisperText, turnstileToken) => {
+    if (!whisperText.trim() || !turnstileToken) {
+      setNotification("Security check required.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
     }
 
-    // Success handling
-    const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
-    if (!commented.includes(id)) {
-      localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
-    }
+    try {
+      const fingerprint = await generateFingerprint();
 
-    setNotification(data?.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
-    setTimeout(() => setNotification(null), 3000);
-    
-  } catch (err) {
-    console.error('Whisper failed:', err);
-    setNotification(err.message || "The whisper faded into the void.");
-    setTimeout(() => setNotification(null), 4000);
-  }
-};
+      // ✅ Call through proxy
+      const response = await fetch('/api/whisper-secure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId: id,
+          whisperText: whisperText.trim(),
+          turnstileToken: turnstileToken,
+          fingerprint: fingerprint
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Could not send whisper.");
+      }
+
+      const commented = JSON.parse(localStorage.getItem("commented_secrets") || "[]");
+      if (!commented.includes(id)) {
+        localStorage.setItem("commented_secrets", JSON.stringify([...commented, id]));
+      }
+
+      setNotification(result.status === 'filtered' ? "Whisper sent." : "Whisper sent securely.");
+      setTimeout(() => setNotification(null), 3000);
+      
+    } catch (err) {
+      console.error('Whisper failed:', err);
+      setNotification(err.message || "The whisper faded into the void.");
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
 
   const confirmDelete = async (pin) => {
     if (!deleteTargetId) return;
     setIsDeleting(true); 
     
     try {
-      const { data, error } = await supabase.functions.invoke('rapid-responder', { 
-        body: { postId: deleteTargetId, pin: pin } 
+      // ✅ Call through proxy
+      const response = await fetch('/api/rapid-responder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: deleteTargetId, pin: pin })
       });
 
-      if (error) {
-        const errorBody = await error.context.json();
-        setNotification(errorBody.error || "The silence remains.");
-      } else if (data?.success) {
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "The silence remains.");
+      }
+
+      if (result.success) {
         setSecrets(prev => prev.filter(s => s.id !== deleteTargetId));
         setDeleteTargetId(null);
         setNotification("Secret released into the wind.");
       }
     } catch (err) {
       console.error("❌ Delete failed:", err);
-      setNotification("Connection lost. Try again later.");
+      setNotification(err.message || "Connection lost. Try again later.");
     } finally {
       setIsDeleting(false);
       setTimeout(() => setNotification(null), 5000);
@@ -379,12 +375,16 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
 
   const handleToggleListening = async (secretId, isNowListening) => {
     try {
-      const { error } = await supabase
-        .from('unspoken_words')
-        .update({ is_listening: isNowListening })
-        .eq('id', secretId);
+      // ✅ Call through proxy
+      const response = await fetch('/api/toggle-listening', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secretId, isListening: isNowListening })
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error);
 
       setSecrets(prev => prev.map(s => 
         s.id === secretId ? { ...s, is_listening: isNowListening } : s
@@ -395,43 +395,45 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
   };
 
   const handleToggleVisibility = async (secretId, nextVisible) => {
-  const mySecrets = readMySecrets();
+    const mySecrets = readMySecrets();
 
-  // ✅ 1) OPTIMISTIC UI UPDATE (instant)
-  setSecrets((prev) => {
-    const next = prev
-      .map((s) => (s.id === secretId ? { ...s, is_visible: nextVisible } : s))
-      .filter((s) => shouldShowPost(s, mySecrets)); // keep filtering consistent
-    return next;
-  });
-
-  try {
-    // ✅ 2) REAL DB UPDATE
-    const { error } = await supabase
-      .from("unspoken_words")
-      .update({ is_visible: nextVisible })
-      .eq("id", secretId);
-
-    if (error) throw error;
-
-    // optional tiny toast
-    setNotification(nextVisible ? "Now public." : "Now hidden.");
-    setTimeout(() => setNotification(null), 2000);
-  } catch (err) {
-    console.error("❌ Toggle visibility failed:", err);
-
-    // ❌ 3) ROLLBACK if DB fails
+    // Optimistic UI update
     setSecrets((prev) => {
       const next = prev
-        .map((s) => (s.id === secretId ? { ...s, is_visible: !nextVisible } : s))
+        .map((s) => (s.id === secretId ? { ...s, is_visible: nextVisible } : s))
         .filter((s) => shouldShowPost(s, mySecrets));
       return next;
     });
 
-    setNotification("Failed to update visibility. Reverted.");
-    setTimeout(() => setNotification(null), 3000);
-  }
-};
+    try {
+      // ✅ Call through proxy
+      const response = await fetch('/api/toggle-visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secretId, isVisible: nextVisible })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error);
+
+      setNotification(nextVisible ? "Now public." : "Now hidden.");
+      setTimeout(() => setNotification(null), 2000);
+    } catch (err) {
+      console.error("❌ Toggle visibility failed:", err);
+
+      // Rollback on error
+      setSecrets((prev) => {
+        const next = prev
+          .map((s) => (s.id === secretId ? { ...s, is_visible: !nextVisible } : s))
+          .filter((s) => shouldShowPost(s, mySecrets));
+        return next;
+      });
+
+      setNotification("Failed to update visibility. Reverted.");
+      setTimeout(() => setNotification(null), 3000);
+    }
+  };
 
   return (
     <div className={`h-screen w-screen relative overflow-hidden ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
@@ -486,16 +488,16 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
           markAsVisited(id);
         }}
       />
-<MapContainer 
-  center={[20, 0]} 
-  zoom={3} 
-  // Add these three props:
-  minZoom={2}
-  maxBounds={[[-90, -180], [90, 180]]}
-  maxBoundsViscosity={1.0}
-  style={{ height: "100%", width: "100%", background: 'transparent' }}
-  zoomControl={false}
->
+
+      <MapContainer 
+        center={[20, 0]} 
+        zoom={3} 
+        minZoom={2}
+        maxBounds={[[-90, -180], [90, 180]]}
+        maxBoundsViscosity={1.0}
+        style={{ height: "100%", width: "100%", background: 'transparent' }}
+        zoomControl={false}
+      >
         <TileLayer url={isDark ? MAP_TILES.dark : MAP_TILES.light} />
         <WorldLabel isDark={isDark} />
         <MapController secrets={secrets} targetPos={targetPos} setZoomLevel={setZoomLevel} />
@@ -525,7 +527,7 @@ const handleAddWhisper = async (id, whisperText, turnstileToken) => {
           activeSecretId={activeSecretId}
           setActiveSecretId={setActiveSecretId}
           onToggleListening={handleToggleListening} 
-           onToggleVisibility={handleToggleVisibility}
+          onToggleVisibility={handleToggleVisibility}
         />
       </MapContainer>
       
