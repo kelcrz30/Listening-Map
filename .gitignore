@@ -48,3 +48,4 @@ src/admin/
 admin-dashboard.html
 admin-index*.html
 **/admin/
+.env*.local

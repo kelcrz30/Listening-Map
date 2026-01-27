@@ -1,10 +1,25 @@
+// api/get-online-count.js
+const activeSessions = new Map();
+const SESSION_TIMEOUT = 45000; // 45 seconds
+
 export default async function handler(req, res) {
-  // Simple implementation - count unique IPs in last 5 minutes
-  // You can make this more sophisticated if needed
+  const sessionId = req.headers['x-session-id'];
+  const now = Date.now();
   
-  // For now, return a random count between 1-10
-  // You can improve this later with Redis or similar
-  const count = Math.floor(Math.random() * 10) + 1;
+  // Clean up stale sessions (older than 45 seconds)
+  for (const [id, timestamp] of activeSessions.entries()) {
+    if (now - timestamp > SESSION_TIMEOUT) {
+      activeSessions.delete(id);
+    }
+  }
+  
+  // Update this session's timestamp (only if sessionId provided)
+  if (sessionId) {
+    activeSessions.set(sessionId, now);
+  }
+  
+  // Return count (minimum of 1)
+  const count = Math.max(activeSessions.size, 1);
   
   return res.status(200).json({ count });
 }

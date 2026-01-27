@@ -30,6 +30,7 @@ import NotificationBell from "./components/NotificationBell";
 import MentalHealthModal from './components/MentalHealthModal';
 import { checkForCrisisLanguage } from './utils/mentalHealthDetector';
 import { generateFingerprint, checkRateLimitClientSide, logAction } from "./utils/antiSpam";
+import { supabase } from "./supabaseClient";
 import { getMySecrets, addMySecret } from "./utils/mySecrets";
 
 export default function App() {
@@ -61,8 +62,18 @@ function AppContent() {
   const [activeSecretId, setActiveSecretId] = useState(null);
   const [onlineCount, setOnlineCount] = useState(1);
   const [showMentalHealthModal, setShowMentalHealthModal] = useState(false);
+  
   const [isDeleting, setIsDeleting] = useState(false);
+useEffect(() => {
+  (async () => {
+    const { data: { session } } = await supabase.auth.getSession();
 
+    if (!session) {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) console.error("Anonymous sign-in failed:", error.message);
+    }
+  })();
+}, []);
   const readMySecrets = () => {
     try {
       return JSON.parse(localStorage.getItem("my_secrets") || "[]");
@@ -99,7 +110,10 @@ function AppContent() {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
+    // Generate anonymous session ID once per visit
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
     // Initial fetch
     fetchSecrets();
 
@@ -182,19 +196,21 @@ function AppContent() {
       eventSource.close();
     };
 
-    // ✅ Simple online counter (since we can't use Supabase presence)
-    const updateOnlineCount = async () => {
-      try {
-        const response = await fetch('/api/get-online-count');
-        const { count } = await response.json();
-        if (count) setOnlineCount(count);
-      } catch (err) {
-        console.error("Failed to get online count:", err);
-      }
-    };
+    // ✅ Anonymous presence tracking with session ID
+const updateOnlineCount = async () => {
+  try {
+    const response = await fetch('/api/get-online-count', {
+      headers: { 'x-session-id': sessionId }
+    });
+    const { count } = await response.json();
+    if (count) setOnlineCount(count);
+  } catch (err) {
+    console.error("Failed to get online count:", err);
+  }
+};
 
-    updateOnlineCount();
-    const onlineInterval = setInterval(updateOnlineCount, 30000); // Every 30s
+updateOnlineCount();
+const onlineInterval = setInterval(updateOnlineCount, 30000);
 
     return () => {
       clearInterval(poll);
@@ -460,7 +476,7 @@ function AppContent() {
       )}
 
       <Notification message={notification} isDark={isDark} />
-      <PresenceCounter count={onlineCount} isDark={isDark} />
+      <PresenceCounter isDark={isDark} />
 
       <div className="fixed top-6 right-4 sm:right-12 flex items-center gap-3 z-[1001]">
         <NotificationBell 
