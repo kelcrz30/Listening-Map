@@ -42,29 +42,99 @@ export default function AboutModal({ onClose }) {
           </p>
 
           <h2 className="text-zinc-600 text-[9px] tracking-[0.5em] uppercase mb-4">
-            Privacy & Presence
+            Privacy & What We Collect
           </h2>
           <ul className="text-zinc-500 text-[11px] leading-relaxed space-y-3 mb-8">
             <li>
-              <span className="text-zinc-300">ANONYMITY:</span> No accounts, no emails, no tracking. 
-              We do not know who you are, and we like it that way.
+              <span className="text-zinc-300">ANONYMOUS ACCOUNTS:</span> You sign in anonymously through Supabase. 
+              No email, no password, no personal information required. Each session gets a random user ID.
             </li>
             <li>
-              <span className="text-zinc-300">EPHEMERAL ID:</span> We use a temporary session key to prevent spam. 
-              This key is scrambled into a mathematical hash and is wiped from existence when you close your browser tab.
+              <span className="text-zinc-300">YOUR WORDS & LOCATION:</span> When you share a secret, we store your message, 
+              GPS coordinates (or manually selected location), and timestamp. This allows you to see your posts on the map.
             </li>
             <li>
-              <span className="text-zinc-300">LOCATION:</span> Your words are pinned to a place, but we slightly blur 
-              your exact coordinates to ensure your precise location remains private.
+              <span className="text-zinc-300">OPTIONAL PIN:</span> If you set a 4-digit PIN, you can delete your post later. 
+              Without a PIN, your words become permanent—like releasing them into the wind.
             </li>
             <li>
-              <span className="text-zinc-300">MODERATION:</span> While this is a space for freedom, the wind 
-              carries away words of hate or harm.
+              <span className="text-zinc-300">SPAM PREVENTION:</span> To keep the space safe, we collect:
+              <ul className="ml-4 mt-2 space-y-1">
+                <li>• Browser fingerprint (hashed, not traceable to you)</li>
+                <li>• IP address (hashed, stored for rate limiting)</li>
+                <li>• Network subnet (hashed, for distributed spam detection)</li>
+                <li>• Typing patterns (to detect bots)</li>
+                <li>• Cloudflare security verification</li>
+              </ul>
+            </li>
+            <li>
+              <span className="text-zinc-300">SECURITY HASHING:</span> Your IP and device fingerprint are cryptographically 
+              hashed with a secret salt—meaning we can verify rate limits and prevent spam, but we cannot reverse-engineer who you are.
+            </li>
+            <li>
+              <span className="text-zinc-300">OWNERSHIP:</span> Each post is tied to your anonymous user ID. You can only 
+              delete, hide, or modify your own posts—not others'.
+            </li>
+            <li>
+              <span className="text-zinc-300">NO TRACKING:</span> We don't use analytics, cookies, or tracking pixels. 
+              We don't sell your data. We don't know who you are.
+            </li>
+            <li>
+              <span className="text-zinc-300">MODERATION:</span> Posts are scanned for spam, URLs, and harmful content. 
+              Flagged posts are shadow-banned (hidden from the public map) but remain visible to you.
             </li>
           </ul>
 
+          <h2 className="text-zinc-600 text-[9px] tracking-[0.5em] uppercase mb-4">
+            Rate Limits (To Prevent Abuse)
+          </h2>
+          <ul className="text-zinc-500 text-[11px] leading-relaxed space-y-2 mb-8">
+            <li>• 2 minutes between posts</li>
+            <li>• 5 posts per 5 minutes</li>
+            <li>• 25 posts per hour</li>
+            <li>• 30 posts per day</li>
+            <li>• 10 second cooldown per network</li>
+            <li>• 50 posts per minute globally (all users)</li>
+          </ul>
+
+          <h2 className="text-zinc-600 text-[9px] tracking-[0.5em] uppercase mb-4">
+            Data Storage
+          </h2>
+          <ul className="text-zinc-500 text-[11px] leading-relaxed space-y-2 mb-8">
+            <li>
+              <span className="text-zinc-300">POSTS:</span> Stored indefinitely unless you delete them with your PIN. 
+              Posts without PINs are permanent.
+            </li>
+            <li>
+              <span className="text-zinc-300">RATE LIMIT DATA:</span> Stored in database tables (rate_limits, global_limits) 
+              to enforce posting limits. Not automatically deleted.
+            </li>
+            <li>
+              <span className="text-zinc-300">HASHED IDENTIFIERS:</span> IP hash, subnet hash, and fingerprint are stored 
+              with each post for spam prevention and rate limiting. These cannot be reversed to identify you.
+            </li>
+            <li>
+              <span className="text-zinc-300">CONTENT HASHES:</span> We store a hash of your post content to prevent 
+              duplicate submissions within 24 hours.
+            </li>
+          </ul>
+
+          <h2 className="text-zinc-600 text-[9px] tracking-[0.5em] uppercase mb-4">
+            Your Rights
+          </h2>
+          <ul className="text-zinc-500 text-[11px] leading-relaxed space-y-2 mb-8">
+            <li>• Delete your posts anytime (if you set a PIN)</li>
+            <li>• Hide posts from the public map</li>
+            <li>• Control whether you receive replies ("listening" mode)</li>
+            <li>• No account to delete—just close your browser</li>
+            <li>• All posts are tied to anonymous IDs, not your identity</li>
+          </ul>
+
           <div className="pt-6 border-t border-white/5">
-            <p className="text-zinc-600 text-[10px] italic">- Kel</p>
+            <p className="text-zinc-600 text-[10px] italic">
+              Sulyap is built with care, not surveillance. Your secrets are yours alone.
+            </p>
+            <p className="text-zinc-600 text-[10px] italic mt-2">- Kel</p>
           </div>
 
           <button
