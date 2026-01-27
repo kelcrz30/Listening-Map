@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../supabaseClient";
 
 function getOrCreateStableId(key = "uw_fingerprint") {
   let id = localStorage.getItem(key);
   if (!id) {
-    id =
-      (crypto?.randomUUID?.() ||
-        `fp_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    id = (crypto?.randomUUID?.() || `fp_${Date.now()}_${Math.random().toString(16).slice(2)}`);
     localStorage.setItem(key, id);
   }
   return id;
@@ -45,9 +44,7 @@ export default function BottomDock({
 
   const CHAR_LIMIT = 500;
   const MIN_TEXT_LENGTH = 2;
-  const IS_DEV =
-    location.hostname === "localhost" || location.hostname === "127.0.0.1";
-
+  const IS_DEV = location.hostname === "localhost" || location.hostname === "127.0.0.1";
   const MIN_INTERVAL_MINUTES = IS_DEV ? 0 : 2;
   const EDGE_FUNCTION_URL = "/api/create-post";
   const MAX_POSTS_PER_DAY = 30;
@@ -60,98 +57,70 @@ export default function BottomDock({
   const isNearDailyLimit = dailyPostCount >= MAX_POSTS_PER_DAY * 0.8;
   const isNearHourlyLimit = hourlyPostCount >= MAX_POSTS_PER_HOUR * 0.75;
 
-  // ✅ Load Turnstile script
+  // Turnstile setup
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return;
-
     const scriptId = "cf-turnstile-script";
     let script = document.getElementById(scriptId);
-
     const onLoad = () => {
       turnstileReadyRef.current = true;
       renderTurnstile();
     };
-
     if (!script) {
       script = document.createElement("script");
       script.id = scriptId;
-      script.src =
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      script.async = true;
-      script.defer = true;
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true; 
+      script.defer = true; 
       script.onload = onLoad;
       document.head.appendChild(script);
     } else {
       if (window.turnstile) onLoad();
       else script.addEventListener("load", onLoad, { once: true });
     }
-
-    return () => {
-      try {
-        script?.removeEventListener?.("load", onLoad);
-      } catch {}
-    };
+    return () => script?.removeEventListener?.("load", onLoad);
   }, [TURNSTILE_SITE_KEY]);
 
-  const resetTurnstile = () => {
-    try {
-      if (window.turnstile && turnstileWidgetIdRef.current != null) {
-        window.turnstile.reset(turnstileWidgetIdRef.current);
-      }
-    } catch {}
-  };
-
   const removeTurnstile = () => {
-    try {
+    try { 
       if (window.turnstile && turnstileWidgetIdRef.current != null) {
-        window.turnstile.remove(turnstileWidgetIdRef.current);
+        window.turnstile.remove(turnstileWidgetIdRef.current); 
       }
     } catch {}
     turnstileWidgetIdRef.current = null;
   };
 
   const renderTurnstile = () => {
-    if (!TURNSTILE_SITE_KEY) return;
-    if (!turnstileReadyRef.current || !window.turnstile) return;
-    if (!turnstileDivRef.current) return;
-
+    if (!TURNSTILE_SITE_KEY || !turnstileReadyRef.current || !window.turnstile || !turnstileDivRef.current) return;
     const shouldShow = inputText.trim().length > 0 && cooldown === 0;
-
-    if (!shouldShow) {
-      removeTurnstile();
-      setCaptchaToken(null);
-      return;
+    if (!shouldShow) { 
+      removeTurnstile(); 
+      setCaptchaToken(null); 
+      return; 
     }
-
     if (turnstileWidgetIdRef.current != null) return;
-
     setCaptchaToken(null);
-
-    turnstileWidgetIdRef.current = window.turnstile.render(
-      turnstileDivRef.current,
-      {
-        sitekey: TURNSTILE_SITE_KEY,
-        theme: isDark ? "dark" : "light",
-        size: "normal",
-        callback: (token) => setCaptchaToken(token || null),
-        "expired-callback": () => setCaptchaToken(null),
-        "error-callback": () => setCaptchaToken(null),
-      }
-    );
+    turnstileWidgetIdRef.current = window.turnstile.render(turnstileDivRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: isDark ? "dark" : "light",
+      callback: (token) => setCaptchaToken(token || null),
+      "expired-callback": () => setCaptchaToken(null),
+      "error-callback": () => setCaptchaToken(null),
+    });
   };
 
-  useEffect(() => {
-    renderTurnstile();
+  useEffect(() => { 
+    renderTurnstile(); 
   }, [inputText, cooldown, isDark]);
 
-  // ✅ Human signal collection
+  // Human signal collection
   useEffect(() => {
     let count = 0;
     const onMove = () => {
       count++;
-      if (count > 6 && !hasPointerMoved) {
-        setHasPointerMoved(true);
-        setInteractionScore((p) => p + 2);
+      if (count > 6 && !hasPointerMoved) { 
+        setHasPointerMoved(true); 
+        setInteractionScore((p) => p + 2); 
       }
     };
     window.addEventListener("pointermove", onMove, { passive: true });
@@ -160,67 +129,37 @@ export default function BottomDock({
 
   const onFocus = () => setInteractionScore((p) => p + 1);
 
-  // ✅ Load counters
+  // Load counters
   useEffect(() => {
     const loadCounts = () => {
-      const dailyData = localStorage.getItem("daily_posts");
-      const hourlyData = localStorage.getItem("hourly_posts");
       const today = new Date().toISOString().split("T")[0];
-
-      if (dailyData) {
-        const parsed = JSON.parse(dailyData);
-        if (parsed?.date === today) setDailyPostCount(parsed?.count || 0);
-        else {
-          localStorage.setItem(
-            "daily_posts",
-            JSON.stringify({ count: 0, date: today })
-          );
-          setDailyPostCount(0);
-        }
-      } else {
-        localStorage.setItem(
-          "daily_posts",
-          JSON.stringify({ count: 0, date: today })
-        );
-        setDailyPostCount(0);
-      }
-
-      if (hourlyData) {
-        const parsed = JSON.parse(hourlyData);
-        if (parsed?.timestamp > Date.now() - 3600000)
-          setHourlyPostCount(parsed?.count || 0);
-        else {
-          localStorage.removeItem("hourly_posts");
-          setHourlyPostCount(0);
-        }
-      }
+      const dailyData = JSON.parse(localStorage.getItem("daily_posts") || "{}");
+      if (dailyData.date === today) setDailyPostCount(dailyData.count || 0);
+      const hourlyData = JSON.parse(localStorage.getItem("hourly_posts") || "{}");
+      if (hourlyData.timestamp > Date.now() - 3600000) setHourlyPostCount(hourlyData.count || 0);
     };
-
     loadCounts();
     const interval = setInterval(loadCounts, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ Load cooldown on mount
+  // Load cooldown
   useEffect(() => {
     const saved = localStorage.getItem("post_cooldown");
     if (saved) {
-      const remaining = Math.max(
-        0,
-        Math.floor((parseInt(saved, 10) - Date.now()) / 1000)
-      );
+      const remaining = Math.max(0, Math.floor((parseInt(saved, 10) - Date.now()) / 1000));
       setCooldown(remaining);
     }
   }, []);
 
-  // ✅ Cooldown timer
+  // Cooldown timer
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => {
       setCooldown((prev) => {
-        if (prev <= 1) {
-          localStorage.removeItem("post_cooldown");
-          return 0;
+        if (prev <= 1) { 
+          localStorage.removeItem("post_cooldown"); 
+          return 0; 
         }
         return prev - 1;
       });
@@ -230,42 +169,30 @@ export default function BottomDock({
 
   const updatePostCounts = () => {
     const today = new Date().toISOString().split("T")[0];
-
     const newDaily = dailyPostCount + 1;
-    localStorage.setItem(
-      "daily_posts",
-      JSON.stringify({ count: newDaily, date: today })
-    );
+    localStorage.setItem("daily_posts", JSON.stringify({ count: newDaily, date: today }));
     setDailyPostCount(newDaily);
-
     const newHourly = hourlyPostCount + 1;
-    localStorage.setItem(
-      "hourly_posts",
-      JSON.stringify({ count: newHourly, timestamp: Date.now() })
-    );
+    localStorage.setItem("hourly_posts", JSON.stringify({ count: newHourly, timestamp: Date.now() }));
     setHourlyPostCount(newHourly);
   };
 
   const calculateTypingMetrics = () => {
     if (keystrokeTimestamps.length < 2) {
-      return {
-        avgSpeed: 0,
-        variance: 0,
-        totalTypingTime: firstKeystroke ? Date.now() - firstKeystroke : 0,
+      return { 
+        avgSpeed: 0, 
+        variance: 0, 
+        totalTypingTime: firstKeystroke ? Date.now() - firstKeystroke : 0 
       };
     }
-
-    const intervals = [];
-    for (let i = 1; i < keystrokeTimestamps.length; i++) {
-      intervals.push(keystrokeTimestamps[i] - keystrokeTimestamps[i - 1]);
-    }
+    const intervals = keystrokeTimestamps.slice(1).map((t, i) => t - keystrokeTimestamps[i]);
     const avgSpeed = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-    const variance =
-      intervals.reduce((sum, x) => sum + (x - avgSpeed) ** 2, 0) /
-      intervals.length;
-    const totalTypingTime = firstKeystroke ? Date.now() - firstKeystroke : 0;
-
-    return { avgSpeed, variance, totalTypingTime };
+    const variance = intervals.reduce((sum, x) => sum + (x - avgSpeed) ** 2, 0) / intervals.length;
+    return { 
+      avgSpeed, 
+      variance, 
+      totalTypingTime: Date.now() - firstKeystroke 
+    };
   };
 
   const canPost = () =>
@@ -280,30 +207,30 @@ export default function BottomDock({
 
   const handleTextChange = (e) => {
     const newValue = e.target.value.slice(0, CHAR_LIMIT);
-
     if (!firstKeystroke && newValue.length === 1) setFirstKeystroke(Date.now());
     if (newValue.length > inputText.length) {
       setKeystrokeTimestamps((prev) => [...prev, Date.now()].slice(-50));
     }
-    if (newValue.length === 0) {
-      setFirstKeystroke(null);
-      setKeystrokeTimestamps([]);
+    if (newValue.length === 0) { 
+      setFirstKeystroke(null); 
+      setKeystrokeTimestamps([]); 
     }
-
     setInputText(newValue);
   };
 
+  // ✅ FIXED: Now properly uses auth token
   const handlePost = async () => {
     if (!canPost()) return;
 
+    // Honeypot check
     if (honeypot.trim() !== "") {
       setIsPosting(true);
       await new Promise((r) => setTimeout(r, 900));
-      setInputText("");
-      setPostPin("");
+      setInputText(""); 
+      setPostPin(""); 
       setHoneypot("");
-      setCaptchaToken(null);
-      removeTurnstile();
+      setCaptchaToken(null); 
+      removeTurnstile(); 
       setIsPosting(false);
       return;
     }
@@ -312,41 +239,56 @@ export default function BottomDock({
     setError("");
 
     try {
-      let lat, lng;
+      // ✅ Get the auth token FIRST
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
+      // ✅ If no session, try to create one
+      if (!token) {
+        console.log("⚠️ No session found, creating anonymous session...");
+        const { error: signInError } = await supabase.auth.signInAnonymously();
+        if (signInError) {
+          throw new Error("Failed to authenticate. Please refresh the page.");
+        }
+        // Get the new session
+        const { data: { session: newSession } } = await supabase.auth.getSession();
+        if (!newSession?.access_token) {
+          throw new Error("Authentication failed. Please refresh the page.");
+        }
+      }
+
+      // Get location
+      let lat, lng;
       if (useCurrentLocation) {
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            timeout: 10000,
-          });
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
         });
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
       } else {
-        if (!selectedLocation)
-          throw new Error("Please select a location on the map first.");
         lat = selectedLocation.lat;
         lng = selectedLocation.lng;
       }
 
-      const trimmedText = inputText.trim();
+      // Get fresh token after potential sign-in
+      const { data: { session: finalSession } } = await supabase.auth.getSession();
+      const finalToken = finalSession?.access_token;
+
+      if (!finalToken) {
+        throw new Error("Authentication required. Please refresh the page.");
+      }
+
       const metrics = calculateTypingMetrics();
-
-      // ✅ Remove FORCE_BOT_TEST - use real metrics
-      const botMetrics = {
-        typingSpeed: metrics.avgSpeed,
-        typingVariance: metrics.variance,
-        totalTypingTime: metrics.totalTypingTime,
-        keystrokeCount: keystrokeTimestamps.length,
-        hasPointerMovement: hasPointerMoved,
-        interactionScore,
-      };
-
+      
+      // ✅ NOW we include the Authorization header
       const resp = await fetch(EDGE_FUNCTION_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${finalToken}`, // ✅ THIS WAS MISSING
+        },
         body: JSON.stringify({
-          text: trimmedText,
+          text: inputText.trim(),
           lat: parseFloat(Number(lat).toFixed(6)),
           lng: parseFloat(Number(lng).toFixed(6)),
           post_pin: postPin?.length === 4 ? postPin : null,
@@ -354,59 +296,56 @@ export default function BottomDock({
           fingerprint,
           timestamp: Date.now(),
           honeypot,
-          requestId:
-            crypto?.randomUUID?.() ||
-            `req_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-          behaviorMetrics: botMetrics,
+          requestId: crypto?.randomUUID?.() || `req_${Date.now()}`,
+          behaviorMetrics: {
+            typingSpeed: metrics.avgSpeed,
+            typingVariance: metrics.variance,
+            totalTypingTime: metrics.totalTypingTime,
+            keystrokeCount: keystrokeTimestamps.length,
+            hasPointerMovement: hasPointerMoved,
+            interactionScore,
+          },
         }),
       });
 
       const result = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        // ✅ Sync cooldown from backend response
         if (resp.status === 429) {
-          const waitSeconds = result.waitSeconds || (MIN_INTERVAL_MINUTES * 60);
+          const wait = result.waitSeconds || (MIN_INTERVAL_MINUTES * 60);
           if (!IS_DEV) {
-            localStorage.setItem(
-              "post_cooldown",
-              String(Date.now() + waitSeconds * 1000)
-            );
-            setCooldown(waitSeconds);
+            localStorage.setItem("post_cooldown", String(Date.now() + wait * 1000));
+            setCooldown(wait);
           }
         }
         throw new Error(result?.error || "Please try again later.");
       }
 
-      // ✅ Success - sync cooldown from backend
       updatePostCounts();
-
-      const cooldownSeconds = result.cooldownSeconds || (MIN_INTERVAL_MINUTES * 60);
+      const cd = result.cooldownSeconds || (MIN_INTERVAL_MINUTES * 60);
       if (!IS_DEV) {
-        localStorage.setItem(
-          "post_cooldown",
-          String(Date.now() + cooldownSeconds * 1000)
-        );
-        setCooldown(cooldownSeconds);
+        localStorage.setItem("post_cooldown", String(Date.now() + cd * 1000));
+        setCooldown(cd);
       }
 
-      // Clear UI
-      setInputText("");
-      setPostPin("");
-      setHoneypot("");
+      setInputText(""); 
+      setPostPin(""); 
+      setHoneypot(""); 
       setCaptchaToken(null);
-      setFirstKeystroke(null);
-      setKeystrokeTimestamps([]);
+      setFirstKeystroke(null); 
+      setKeystrokeTimestamps([]); 
       setHasPointerMoved(false);
-      setInteractionScore(0);
-
+      setInteractionScore(0); 
       removeTurnstile();
 
       if (onPostSuccess) onPostSuccess(result.post);
     } catch (e) {
+      console.error("❌ Post error:", e);
       setError(e?.message || "Please try again later.");
       setCaptchaToken(null);
-      resetTurnstile();
+      if (window.turnstile && turnstileWidgetIdRef.current) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      }
     } finally {
       setIsPosting(false);
     }

@@ -1,3 +1,5 @@
+// api/rapid-responder.js
+
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
   const allowed = new Set([
@@ -11,12 +13,30 @@ export default async function handler(req, res) {
   }
 
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   
   if (req.method === "OPTIONS") return res.status(204).end();
 
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   try {
     const { postId, pin } = req.body;
+
+    const proxyKey = process.env.EDGE_PROXY_KEY;
+
+    if (!proxyKey) {
+      console.error("❌ Missing EDGE_PROXY_KEY");
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
+    // ✅ CRITICAL FIX: Forward the user's auth token, not SERVICE_ROLE
+    const authHeader = req.headers.authorization || "";
+
+    if (!authHeader) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
 
     const response = await fetch(
       `https://zndkwygyxtbnlrpotgig.supabase.co/functions/v1/rapid-responder`,
@@ -24,16 +44,22 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+          'x-edge-proxy-key': proxyKey,
+          'Authorization': authHeader, // ✅ Forward user's token, not SERVICE_ROLE
         },
         body: JSON.stringify({ postId, pin })
       }
     );
 
     const result = await response.json();
+    
+    if (!response.ok) {
+      console.error("❌ Edge function error:", response.status, result);
+    }
+
     return res.status(response.status).json(result);
   } catch (e) {
-    console.error("Delete error:", e);
+    console.error("❌ Delete proxy error:", e);
     return res.status(500).json({ error: "Failed to delete" });
   }
 }
